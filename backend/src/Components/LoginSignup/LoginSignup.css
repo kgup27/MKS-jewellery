@@ -1,0 +1,130 @@
+/* Container adjusted to match your site's luxury theme */
+.container {
+  display: flex;
+  flex-direction: column;
+  margin: auto;
+  margin-top: 60px;
+  background: #fdfbf7; /* Elegant cream/beige website background */
+  padding-bottom: 30px;
+  width: 600px;
+  border-radius: 12px;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+  border: 1px solid #f3ebd8; /* Muted gold border outline */
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  margin-top: 30px;
+}
+
+.text {
+  color: #1a1a1a; /* Sleek, dark slate/black from your main headline */
+  font-family: 'Playfair Display', 'Didot', 'Georgia', serif; /* Matching the elegant typography */
+  font-size: 44px;
+  font-weight: 700;
+}
+
+.underline {
+  width: 65px;
+  height: 4px;
+  background: #c5a85c; /* Rich jewelry gold accent color */
+  border-radius: 2px;
+}
+
+.inputs {
+  margin-top: 45px;
+  display: flex;
+  flex-direction: column;
+  gap: 25px;
+}
+
+.input {
+  display: flex;
+  align-items: center;
+  margin: auto;
+  width: 480px;
+  height: 55px;
+  background: #f5efe2; /* Slightly darker cream tint for the fields */
+  border: 1px solid #e6dcbf;
+  border-radius: 8px;
+}
+
+.input img {
+  margin: 0px 25px;
+  width: 22px;
+  height: 22px;
+  /* Applies a subtle tint to your png icons to match the dark text */
+  filter: opacity(0.7); 
+}
+
+.input input {
+  height: 50px;
+  width: 400px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #2b2b2b;
+  font-size: 17px;
+}
+
+.input input::placeholder {
+  color: #a39678; /* Soft golden-gray for placeholders */
+}
+
+.forgot-password {
+  padding-left: 65px;
+  margin-top: 25px;
+  color: #7a705a;
+  font-size: 16px;
+}
+
+.forgot-password span {
+  color: #c5a85c; /* Rich gold link */
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.submit-container {
+  display: flex;
+  gap: 25px;
+  margin: 50px auto 0px auto;
+}
+
+/* Primary Active Button */
+.submit {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 210px;
+  height: 55px;
+  color: #ffffff;
+  background: #1a1a1a; /* Premium solid dark block matching your 'Login' button style */
+  border: 1px solid #1a1a1a;
+  border-radius: 4px; /* Slightly sharper corner to match your site buttons */
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.submit:hover {
+  background: #c5a85c; /* Hovers to jewelry gold */
+  border-color: #c5a85c;
+}
+
+/* Inactive/Toggle Button style */
+.gray {
+  background: transparent;
+  color: #7a705a;
+  border: 1px solid #cdbfa0;
+}
+
+.gray:hover {
+  background: #f5efe2;
+  color: #1a1a1a;
+  border-color: #1a1a1a;
+}
