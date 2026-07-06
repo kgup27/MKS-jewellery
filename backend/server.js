@@ -1,56 +1,32 @@
 const express = require('express');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-
+const { Client } = require('pg'); 
 const app = express();
-// This line allows your server to read JSON sent from your frontend signup/login forms
-app.use(express.json()); 
 
-const JWT_SECRET = "super_secret_jewelry_key_123"; // In production, keep this hidden!
-const usersDb = []; // Temporary array acting as a user database
+app.use(express.json());
 
-// 1. SIGNUP ROUTE
-app.post('/api/signup', async (req, res) => {
+
+const connectionString = "postgresql://neondb_owner:npg_JxLA6iOHt4kl@ep-steep-field-ahbitz0q-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require";
+
+const db = new Client({
+    connectionString: connectionString,
+});
+
+db.connect((err) => {
+    if (err) {
+        console.error('PostgreSQL Connection Error ❌:', err.stack);
+        return;
+    }
+    console.log('Successfully connected to your live Cloud PostgreSQL Database! 🚀');
+});
+
+app.get('/api/products', async (req, res) => {
     try {
-        const { email, password } = req.body;
-
-        // Securely scramble the password so hackers can't read it
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        const newUser = { email, password: hashedPassword };
-        usersDb.push(newUser);
-
-        res.status(201).json({ message: "User registered successfully for the Jewelry store!" });
-    } catch (error) {
-        res.status(500).json({ error: "Signup failed" });
+        // Double check your table name in Neon. If it's not "products", change it here.
+        const result = await db.query('SELECT * FROM products');
+        res.json(result.rows); 
+    } catch (err) {
+        res.status(500).json({ error: "Failed to grab products", details: err.message });
     }
 });
 
-// 2. LOGIN ROUTE
-app.post('/api/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-
-        // Find the user by email
-        const user = usersDb.find(u => u.email === email);
-        if (!user) {
-            return res.status(400).json({ error: "Invalid email or password" });
-        }
-
-        // Compare the typed password with the scrambled password in the database
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ error: "Invalid email or password" });
-        }
-
-        // Create the JWT Token (VIP Pass) valid for 1 hour
-        const token = jwt.sign({ email: user.email }, JWT_SECRET, { expiresIn: '1h' });
-
-        // Send the token back to the frontend
-        res.json({ message: "Login successful!", token });
-    } catch (error) {
-        res.status(500).json({ error: "Login failed" });
-    }
-});
-
-app.listen(3000, () => console.log('Server running on port 3000'));
+app.listen(3000, () => console.log('Jewelry Server running perfectly on port 3000'));
