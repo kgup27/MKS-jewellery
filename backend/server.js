@@ -13,10 +13,10 @@ const db = new Client({
 
 db.connect((err) => {
     if (err) {
-        console.error('PostgreSQL Connection Error ❌:', err.stack);
+        console.error('PostgreSQL Connection Error :', err.stack);
         return;
     }
-    console.log('Successfully connected to your live Cloud PostgreSQL Database! 🚀');
+    console.log('Successfully connected to your live Cloud PostgreSQL Database! ');
 });
 
 app.get('/api/products', async (req, res) => {
