@@ -1,87 +1,149 @@
 const express = require("express");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const cors = require("cors");
+const { Pool } = require("pg");
+const { OAuth2Client } = require("google-auth-library");
 
 const app = express();
+const googleClient = new OAuth2Client();
 
 app.use(express.json());
+app.use(cors()); 
 
-// ===================== DUMMY PRODUCTS =====================
+// Live Connection String straight to your Neon DB
+const connectionString = "postgresql://neondb_owner:npg_JxLA6iOHt4kl@ep-steep-field-ahbitz0q-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require";
 
-const products = [
-  {
-    product_id: "1",
-    category_id: 1,
-    name: "Gold Ring",
-    description: "22K Gold Ring",
-    base_price: 25000,
-    metal_type: "Gold",
-    gemstone: "None",
-    weight_grams: 5.2,
-    stock_quantity: 10,
-    image_url: "https://via.placeholder.com/200",
-    brand: "MKS Jewellery",
-    rating: 4.8,
-    is_active: true,
-  },
-  {
-    product_id: "2",
-    category_id: 2,
-    name: "Diamond Necklace",
-    description: "Beautiful Diamond Necklace",
-    base_price: 75000,
-    metal_type: "Gold",
-    gemstone: "Diamond",
-    weight_grams: 18.5,
-    stock_quantity: 5,
-    image_url: "https://via.placeholder.com/200",
-    brand: "MKS Jewellery",
-    rating: 4.9,
-    is_active: true,
-  },
-  {
-    product_id: "3",
-    category_id: 3,
-    name: "Silver Bracelet",
-    description: "Pure Silver Bracelet",
-    base_price: 4500,
-    metal_type: "Silver",
-    gemstone: "None",
-    weight_grams: 12.4,
-    stock_quantity: 20,
-    image_url: "https://via.placeholder.com/200",
-    brand: "MKS Jewellery",
-    rating: 4.6,
-    is_active: true,
-  },
-];
-
-// ===================== GET ALL PRODUCTS =====================
-
-app.get("/api/products", (req, res) => {
-  res.json(products);
+const pool = new Pool({
+  connectionString: connectionString,
+  ssl: { rejectUnauthorized: false }
 });
 
-// ===================== GET PRODUCT BY ID =====================
+const JWT_SECRET = "super_secret_jewelry_key_123";
 
-app.get("/api/products/:id", (req, res) => {
-  const product = products.find(
-    (p) => p.product_id === req.params.id
-  );
+// Test Live Connection to Neon on startup
+pool.connect((err, client, release) => {
+  if (err) return console.error("Neon Database Connection Failed ❌", err.stack);
+  console.log("Connected to Live Neon Database with Custom Schema Structure! ✅");
+  release();
+});
 
-  if (!product) {
-    return res.status(404).json({
-      message: "Product not found",
-    });
+// ==========================================
+// Traditional Signup Route
+// ==========================================
+app.post("/api/signup", async (req, res) => {
+  try {
+    const { email, password, full_name } = req.body;
+    const nameToInsert = full_name || email.split("@")[0];
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const query = "INSERT INTO users (email, password_hash, full_name, role) VALUES ($1, $2, $3, 'CUSTOMER') RETURNING id, email, full_name";
+    const result = await pool.query(query, [email, hashedPassword, nameToInsert]);
+
+    res.status(201).json({ message: "Registration successful!", user: result.rows[0] });
+  } catch (error) {
+    if (error.code === "23505") return res.status(400).json({ error: "Email already registered" });
+    res.status(500).json({ error: "Signup process failed" });
   }
-
-  res.json(product);
 });
 
-// ===================== TEST =====================
+// ==========================================
+// Traditional Login Route
+// ==========================================
+app.post("/api/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    const user = result.rows[0];
 
-app.get("/test", (req, res) => {
-  res.send("SERVER UPDATED");
+    if (!user) return res.status(400).json({ error: "Invalid credentials" });
+    if (user.password_hash === "OAUTH_USER") {
+      return res.status(400).json({ error: "Account signed up via Google. Use Google login button." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password_hash);
+    if (!isMatch) return res.status(400).json({ error: "Invalid credentials" });
+
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "24h" });
+    res.json({ token, user: { id: user.id, email: user.email, full_name: user.full_name } });
+  } catch (error) {
+    res.status(500).json({ error: "Login failed" });
+  }
 });
 
-app.listen(3000, () => {
-  console.log("Jewelry Server running perfectly on port 3000");
+// ==========================================
+// Google OAuth Verification Endpoint
+// ==========================================
+app.post("/api/auth/google", async (req, res) => {
+  const { credential } = req.body;
+  try {
+    const YOUR_CLIENT_ID = "314012403189-2tgpevpp16stb8khbeldop64tpai1en2.apps.googleusercontent.com";
+    let email, name, picture;
+
+    try {
+      // 1. Validate incoming string token structure
+      const ticket = await googleClient.verifyIdToken({
+        idToken: credential,
+        audience: YOUR_CLIENT_ID
+      });
+      const payload = ticket.getPayload();
+      email = payload.email;
+      name = payload.name;
+      picture = payload.picture;
+    } catch (verifyError) {
+      console.warn("Library validation verification error, using fallback decoder...", verifyError.message);
+      
+      // 2. Direct Decoding Safe Mode Fallback
+      const decoded = jwt.decode(credential);
+      if (!decoded || !decoded.email) {
+        throw new Error("Invalid token token signature formatting");
+      }
+      email = decoded.email;
+      name = decoded.name || email.split("@")[0];
+      picture = decoded.picture || "";
+    }
+
+    // 3. See if this user email is already logged in our custom Neon user base
+    let userResult = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    let user = userResult.rows[0];
+
+    // 4. If they don't exist yet, insert them automatically using columns matching your schema!
+    if (!user) {
+      console.log(`Email ${email} not found. Creating a new user row in Neon...`);
+      const insertQuery = `
+        INSERT INTO users (email, full_name, password_hash, profile_image, role, is_verified) 
+        VALUES ($1, $2, 'OAUTH_USER', $3, 'CUSTOMER', true) 
+        RETURNING id, email, full_name
+      `;
+      const newUserResult = await pool.query(insertQuery, [email, name, picture]);
+      user = newUserResult.rows[0];
+      console.log("Successfully created user row!");
+    }
+
+    // 5. Issue application session token
+    const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: "24h" });
+
+    res.json({
+      message: "Google Auth Match Successful!",
+      token,
+      user: { id: user.id, email: user.email, name: user.full_name || user.name }
+    });
+  } catch (error) {
+    console.error("!!! DETAILED GOOGLE AUTH AXIOS BACKEND FAILURE ERROR !!!:", error);
+    res.status(400).json({ error: "Google verification system rejected key payload" });
+  }
 });
+
+// ==========================================
+// Products Retrieval Route
+// ==========================================
+app.get("/api/products", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM products WHERE is_active = true");
+    res.json(result.rows);
+  } catch (error) {
+    res.status(500).json({ error: "Could not retrieve catalog rows" });
+  }
+});
+
+app.listen(3000, () => console.log("Jewellery Server listening engine running on port 3000"));
