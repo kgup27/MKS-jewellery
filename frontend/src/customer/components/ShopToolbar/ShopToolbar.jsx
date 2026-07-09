@@ -7,6 +7,7 @@ const categories = [
   "Earrings",
   "Bangles",
   "Bracelet",
+  "Studs",
 ];
 
 const sortOptions = [

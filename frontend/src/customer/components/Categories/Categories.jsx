@@ -28,6 +28,13 @@ function Categories() {
       slug: "bangles",
       image: "https://placehold.co/300x300",
     },
+
+    {
+      id: 5,
+      title: "Studs",
+      slug: "studs",
+      image: "https://placehold.co/300x300",
+    },
   ];
 
   return (
@@ -51,7 +58,7 @@ function Categories() {
         </motion.div>
 
         {/* Categories Grid */}
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
           {categories.map((item, index) => (
             
             // Wrapped motion.div inside Link for seamless navigation (Step 3)
