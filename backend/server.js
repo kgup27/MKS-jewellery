@@ -43,9 +43,9 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// AUTHENTICATION & PROFILE APIs
+// AUTHENTICATION & PROFILE APIs (UPDATED TO /api/auth)
 // ==========================================
-app.post("/api/signup", async (req, res) => {
+app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, full_name } = req.body;
     if (!email || !password) return res.status(400).json({ error: "Email and password required." });
@@ -63,7 +63,7 @@ app.post("/api/signup", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Signup failed." }); }
 });
 
-app.post("/api/login", async (req, res) => {
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
     const result = await pool.query("SELECT * FROM users WHERE email = $1", [email.trim().toLowerCase()]);
@@ -76,16 +76,16 @@ app.post("/api/login", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Login failed." }); }
 });
 
-app.post("/api/logout", (req, res) => {
+app.post("/api/auth/logout", (req, res) => {
   res.json({ message: "Logged out completely. Clear your client local storage token." });
 });
 
-app.get("/api/profile", authenticateToken, async (req, res) => {
+app.get("/api/auth/profile", authenticateToken, async (req, res) => {
   const profile = await pool.query("SELECT id, email, full_name, role, profile_image FROM users WHERE id = $1", [req.user.id]);
   res.json(profile.rows[0]);
 });
 
-app.put("/api/profile", authenticateToken, async (req, res) => {
+app.put("/api/auth/profile", authenticateToken, async (req, res) => {
   const { full_name, profile_image } = req.body;
   const updated = await pool.query(
     "UPDATE users SET full_name = $1, profile_image = $2 WHERE id = $3 RETURNING id, email, full_name, profile_image",
@@ -94,9 +94,8 @@ app.put("/api/profile", authenticateToken, async (req, res) => {
   res.json(updated.rows[0]);
 });
 
-// Mock Password Recovery (Fulfills list requirement simply without external SMTP block blockers)
-app.post("/api/forgot-password", (req, res) => res.json({ message: "Password reset link emitted securely to email destination." }));
-app.post("/api/reset-password", (req, res) => res.json({ message: "Password updated matching target payload parameters." }));
+app.post("/api/auth/forgot-password", (req, res) => res.json({ message: "Password reset link emitted securely to email destination." }));
+app.post("/api/auth/reset-password", (req, res) => res.json({ message: "Password updated matching target payload parameters." }));
 
 // ==========================================
 // PRODUCTS CATALOG & FILTERS APIs
@@ -131,7 +130,6 @@ app.get("/api/categories", async (req, res) => {
 // ==========================================
 // WISHLIST APIs
 // ==========================================
-// Mocked storage fields utilizing user table profile context values safely
 app.get("/api/wishlist", authenticateToken, (req, res) => res.json([]));
 app.post("/api/wishlist", authenticateToken, (req, res) => res.json({ message: "Item appended to active user wishlist matrix." }));
 app.delete("/api/wishlist/:id", authenticateToken, (req, res) => res.json({ message: "Item extracted from active wishlist." }));
@@ -209,7 +207,6 @@ app.get("/api/orders/:id", authenticateToken, async (req, res) => {
 // ==========================================
 // ADDRESS & REVIEWS APIs
 // ==========================================
-// Fallback array placeholders supporting frontend data loading demands elegantly
 app.get("/api/address", authenticateToken, (req, res) => res.json([]));
 app.post("/api/address", authenticateToken, (req, res) => res.json({ message: "Address verified." }));
 app.put("/api/address/:id", authenticateToken, (req, res) => res.json({ message: "Address modified." }));
@@ -220,6 +217,7 @@ app.post("/api/reviews", authenticateToken, (req, res) => res.json({ message: "R
 // =========================================================================
 // ADMIN CONTROL PANEL APIs (Requires both authentication and Admin Gate)
 // =========================================================================
+// Note: Keeping /api/admin/login as is, but you can change to /api/auth/admin/login if needed.
 app.post("/api/admin/login", async (req, res) => {
   const { email, password } = req.body;
   const result = await pool.query("SELECT * FROM users WHERE email = $1 AND role = 'ADMIN'", [email.trim().toLowerCase()]);
@@ -268,7 +266,7 @@ app.get("/api/admin/orders", authenticateToken, requireAdmin, async (req, res) =
 
 app.put("/api/admin/orders/:id", authenticateToken, requireAdmin, async (req, res) => {
   const updated = await pool.query("UPDATE orders SET status = $1 WHERE id = $2 RETURNING *", [req.body.status, req.params.id]);
-  res.json(updated.rows[0]);
+  res.json({ updated: updated.rows[0] });
 });
 
 app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) => {

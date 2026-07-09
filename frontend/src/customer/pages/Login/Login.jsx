@@ -44,27 +44,27 @@ function LoginContent() {
   };
 
   // Google Sign-In Success Handler
-  const handleGoogleSuccess = async (credentialResponse) => {
-    setLoading(true);
-    try {
-      const response = await axios.post("http://localhost:3000/api/auth/google", {
-        credential: credentialResponse.credential,
-        clientId: credentialResponse.clientId,
-      });
+  // const handleGoogleSuccess = async (credentialResponse) => {
+  //   setLoading(true);
+  //   try {
+  //     const response = await axios.post("http://localhost:3000/api/auth/google", {
+  //       credential: credentialResponse.credential,
+  //       clientId: credentialResponse.clientId,
+  //     });
 
-      const { token, user } = response.data;
+  //     const { token, user } = response.data;
       
-      login(token, { id: user.id, email: user.email, name: user.name });
+  //     login(token, { id: user.id, email: user.email, name: user.name });
       
-      toast.success(`Welcome, ${user.name}!`);
-      navigate(from, { replace: true });
-    } catch (error) {
-      const errorMsg = error.response?.data?.error || "Google login verification failed";
-      toast.error(errorMsg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  //     toast.success(`Welcome, ${user.name}!`);
+  //     navigate(from, { replace: true });
+  //   } catch (error) {
+  //     const errorMsg = error.response?.data?.error || "Google login verification failed";
+  //     toast.error(errorMsg);
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
 
   return (
     <section className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-6 py-16">
@@ -136,12 +136,12 @@ function LoginContent() {
             {loading ? "Logging in..." : "Login"}
           </button>
 
-          <div className="relative my-6">
+          {/* <div className="relative my-6">
             <hr className="border-gray-200" />
             <span className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 bg-white px-4 text-xs font-medium tracking-wider text-gray-400">
               OR
             </span>
-          </div>
+          </div> */}
 
           {/* Corrected Google Button width setup */}
           {/* <div className="flex justify-center w-full">
