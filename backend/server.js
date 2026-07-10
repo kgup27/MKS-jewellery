@@ -16,12 +16,21 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
+pool.connect()
+  .then((client) => {
+    console.log("✅ Database Connected Successfully!");
+    client.release();
+  })
+  .catch((err) => {
+    console.error("❌ Database Connection Failed:");
+    console.error(err);
+  });
+
 const JWT_SECRET = "super_secret_jewelry_key_123";
 
 // ==========================================
 // MIDDLEWARES
 // ==========================================
-// 1. Regular Customer Token Gate
 const authenticateToken = (req, res, next) => {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -34,16 +43,15 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// 2. Admin Protection Gate
 const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== "ADMIN") {
+  if (!req.user || req.user.role !== "admin") {
     return res.status(403).json({ error: "Forbidden. Access restricted to Administrators only." });
   }
   next();
 };
 
 // ==========================================
-// AUTHENTICATION & PROFILE APIs (UPDATED TO /api/auth)
+// AUTHENTICATION & PROFILE APIs
 // ==========================================
 app.post("/api/auth/signup", async (req, res) => {
   try {
@@ -56,7 +64,7 @@ app.post("/api/auth/signup", async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
     const result = await pool.query(
-      "INSERT INTO users (email, password_hash, full_name, role) VALUES ($1, $2, $3, 'CUSTOMER') RETURNING id, email, full_name, role",
+      "INSERT INTO users (email, password_hash, full_name, role) VALUES ($1, $2, $3, 'customer') RETURNING id, email, full_name, role",
       [sanitizedEmail, hashedPassword, full_name || sanitizedEmail.split("@")[0]]
     );
     res.status(201).json({ message: "Registration successful!", user: result.rows[0] });
@@ -215,18 +223,55 @@ app.get("/api/reviews", (req, res) => res.json([]));
 app.post("/api/reviews", authenticateToken, (req, res) => res.json({ message: "Review posted." }));
 
 // =========================================================================
-// ADMIN CONTROL PANEL APIs (Requires both authentication and Admin Gate)
+// ADMIN CONTROL PANEL APIs (With Debug Logs)
 // =========================================================================
-// Note: Keeping /api/admin/login as is, but you can change to /api/auth/admin/login if needed.
 app.post("/api/admin/login", async (req, res) => {
   const { email, password } = req.body;
-  const result = await pool.query("SELECT * FROM users WHERE email = $1 AND role = 'ADMIN'", [email.trim().toLowerCase()]);
+
+  console.log("EMAIL:", email);
+
+  const result = await pool.query(
+    "SELECT * FROM users WHERE email = $1 AND role = 'admin'",
+    [email.trim().toLowerCase()]
+  );
+
+  console.log("RESULT:", result.rows);
+
   const admin = result.rows[0];
-  if (!admin || !(await bcrypt.compare(password, admin.password_hash))) {
-    return res.status(401).json({ error: "Access denied. Invalid administrator credentials." });
+
+  if (!admin) {
+    console.log("❌ Admin not found");
+    return res.status(401).json({
+      error: "Admin not found",
+    });
   }
-  const token = jwt.sign({ id: admin.id, email: admin.email, role: "ADMIN" }, JWT_SECRET, { expiresIn: "12h" });
-  res.json({ token, admin: { id: admin.id, email: admin.email, full_name: admin.full_name } });
+
+  console.log("PASSWORD HASH:", admin.password_hash);
+
+  const match = await bcrypt.compare(password, admin.password_hash);
+
+  console.log("PASSWORD MATCH:", match);
+
+  if (!match) {
+    return res.status(401).json({
+      error: "Wrong password",
+    });
+  }
+
+  const token = jwt.sign(
+    { id: admin.id, email: admin.email, role: "admin" },
+    JWT_SECRET,
+    { expiresIn: "12h" }
+  );
+
+  res.json({
+    token,
+    admin: {
+      id: admin.id,
+      email: admin.email,
+      full_name: admin.full_name,
+    },
+  });
 });
 
 app.get("/api/admin/dashboard", authenticateToken, requireAdmin, async (req, res) => {

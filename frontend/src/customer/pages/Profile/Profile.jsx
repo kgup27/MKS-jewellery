@@ -1,14 +1,15 @@
-import { Link, useNavigate } from "react-router-dom"; // <-- Step 1 (Integrated)
-import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { useState, useEffect } from "react"; 
 import MainLayout from "../../layouts/MainLayout";
-import { useCustomerAuth } from "../../context/CustomerAuthContext"; // <-- Step 1 (Integrated)
-import toast from "react-hot-toast"; // <-- Step 1 (Integrated)
+import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import toast from "react-hot-toast";
+import api from "../../../services/api"; 
 
 function Profile() {
-  const navigate = useNavigate(); // <-- Step 2 (Integrated)
-  const { logout, user } = useCustomerAuth(); // <-- Step 2 (Integrated) (Added 'user' object if available)
+  const navigate = useNavigate();
+  const { logout, user } = useCustomerAuth();
 
-  // Form states handling (Aap isme dynamic context values inject kar sakte hain)
+  // Form states handling 
   const [formData, setFormData] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -17,17 +18,66 @@ function Profile() {
     address: user?.address || "",
   });
 
-  // 🔥 Step 3: Integrated Logout Function
-  const handleLogout = () => {
-    logout();
-    toast.success("Logged out successfully");
-    navigate("/");
+  // Fetch Live Profile Data on Mount
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const response = await api.get("/api/auth/profile");
+      
+      setFormData({
+        name: response.data.full_name || "",
+        email: response.data.email || "",
+        phone: response.data.phone || "",
+        city: response.data.city || "",
+        address: response.data.address || "",
+      });
+    } catch (error) {
+      console.error("FETCH PROFILE ERROR:", error);
+      toast.error("Failed to load profile");
+    }
   };
 
-  const handleSaveChanges = (e) => {
+  // Async Profile Data Mutation Engine
+  const handleSaveChanges = async (e) => {
     e.preventDefault();
-    // Profile save karne ki API logic yahan aayegi
-    toast.success("Profile updated successfully!");
+
+    try {
+      await api.put("/api/auth/profile", {
+        full_name: formData.name,
+        phone: formData.phone,
+        city: formData.city,
+        address: formData.address,
+      });
+
+      toast.success("Profile updated successfully!");
+    } catch (error) {
+      console.error("UPDATE PROFILE ERROR:", error);
+      toast.error(
+        error.response?.data?.error || "Profile update failed"
+      );
+    }
+  };
+
+  // ✅ STEP 5: Fully Integrated Backend Customer Logout Handler
+  const handleLogout = async () => {
+    try {
+      // Backend api context clean hit
+      await api.post("/api/auth/logout");
+      
+      // Local context/storage update clean-up
+      logout();
+      
+      toast.success("Logged out successfully");
+      navigate("/");
+    } catch (error) {
+      console.error("LOGOUT ERROR:", error);
+      toast.error(
+        error.response?.data?.error || "Logout failed"
+      );
+    }
   };
 
   return (
@@ -40,7 +90,7 @@ function Profile() {
           </p>
 
           <div className="mt-12 grid gap-8 lg:grid-cols-4">
-            {/* Sidebar */}
+            {/* Sidebar Controls */}
             <div className="rounded-3xl bg-white p-6 shadow h-fit">
               <Link
                 to="/profile"
@@ -63,7 +113,6 @@ function Profile() {
                 Saved Address
               </Link>
 
-              {/* 🔥 Step 4: Replaced with the integrated onClick Handler */}
               <button
                 onClick={handleLogout}
                 className="mt-4 w-full rounded-xl border border-red-500 py-3 text-red-500 font-medium transition hover:bg-red-500 hover:text-white"
@@ -72,7 +121,7 @@ function Profile() {
               </button>
             </div>
 
-            {/* Profile Content */}
+            {/* Profile Forms Block */}
             <div className="lg:col-span-3 rounded-3xl bg-white p-8 shadow">
               <h2 className="text-3xl font-bold">Personal Information</h2>
 
@@ -84,15 +133,15 @@ function Profile() {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
+                    required
                   />
 
                   <input
                     type="email"
                     placeholder="Email"
                     value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-                    disabled // Email usually changes nahi karne dete direct authentication setups me
+                    className="rounded-xl border p-4 bg-gray-50 text-gray-400 outline-none cursor-not-allowed"
+                    disabled
                   />
 
                   <input

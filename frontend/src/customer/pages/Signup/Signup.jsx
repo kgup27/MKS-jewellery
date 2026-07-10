@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { FiUser, FiMail, FiLock } from "react-icons/fi";
 import MainLayout from "../../layouts/MainLayout";
-import axios from "axios";
+import api from "../../../services/api";
 import toast from "react-hot-toast";
 
 function Signup() {
@@ -25,8 +25,8 @@ function Signup() {
     setLoading(true);
 
     try {
-      const response = await axios.post(
-        "http://localhost:3000/api/auth/signup",
+      const response = await api.post(
+        "/api/auth/signup",
         {
           full_name: fullName,
           email,

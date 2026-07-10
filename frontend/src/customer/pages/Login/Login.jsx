@@ -4,7 +4,7 @@ import { FiMail, FiLock, FiEye, FiEyeOff } from "react-icons/fi";
 import MainLayout from "../../layouts/MainLayout";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import toast from "react-hot-toast";
-import axios from "axios";
+import api from "../../../services/api";
 // import { GoogleLogin } from "@react-oauth/google";
 
 function LoginContent() {
@@ -26,10 +26,13 @@ function LoginContent() {
     setLoading(true);
 
     try {
-      const response = await axios.post("http://localhost:3000/api/auth/login", {
-        email,
-        password,
-      });
+      const response = await api.post(
+        "/api/auth/login",
+        {
+          email,
+          password,
+        }
+      );
 
       const { token, user } = response.data;
       login(token, { id: user.id, email: user.email, name: user.full_name });

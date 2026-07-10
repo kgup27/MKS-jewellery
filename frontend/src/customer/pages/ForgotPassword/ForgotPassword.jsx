@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { FiMail } from "react-icons/fi";
 import MainLayout from "../../layouts/MainLayout";
 import toast from "react-hot-toast";
-import axios from "axios";
+import api from "../../../services/api";
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -14,12 +14,14 @@ function ForgotPassword() {
     setLoading(true);
 
     try {
-      // Backend API connect karna hai
-      await axios.post("http://localhost:3000/api/auth/forgot-password", {
+      const response = await api.post("/api/auth/forgot-password", {
         email,
       });
 
-      toast.success("Password reset link sent to your email.");
+      toast.success(
+        response.data.message || "Password reset link sent to your email."
+      );
+
       setEmail("");
     } catch (error) {
       toast.error(
@@ -42,7 +44,8 @@ function ForgotPassword() {
             </h1>
 
             <p className="mt-3 text-gray-500">
-              Enter your registered email address and we'll send you a password reset link.
+              Enter your registered email address and we'll send you a password
+              reset link.
             </p>
           </div>
 
@@ -54,7 +57,6 @@ function ForgotPassword() {
               </label>
 
               <div className="flex items-center rounded-xl border border-gray-300 bg-white px-4 transition focus-within:border-[#C9A227]">
-
                 <FiMail className="text-gray-400" />
 
                 <input
@@ -65,7 +67,6 @@ function ForgotPassword() {
                   className="w-full px-3 py-4 outline-none"
                   required
                 />
-
               </div>
             </div>
 

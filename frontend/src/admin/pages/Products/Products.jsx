@@ -1,13 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react"; // Combined useState and useEffect
 import { FaPlus, FaSearch, FaFilter } from "react-icons/fa";
+import toast from "react-hot-toast";
 
 import ProductTable from "../../components/ProductTable/ProductTable";
 import ProductModal from "../../components/ProductModal/ProductModal";
 import Pagination from "../../components/Pagination/Pagination";
 import DeleteModal from "../../components/DeleteModal/DeleteModal";
-import ViewProductModal from "../../components/ViewProductModal/ViewProductModal"; // Added Import
+import ViewProductModal from "../../components/ViewProductModal/ViewProductModal";
+
+// API service import
+import api from "../../../services/api";
 
 function Products() {
+  // Existing Modal States
   const [openModal, setOpenModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   
@@ -15,9 +20,55 @@ function Products() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteProduct, setDeleteProduct] = useState(null);
   
-  // View States (Added)
+  // View States
   const [viewOpen, setViewOpen] = useState(false);
   const [viewProduct, setViewProduct] = useState(null); 
+
+  // Step 10.2: API Data & Loading States
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // Step 10.3: Fetch Products on Component Mount
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get("/api/products");
+      setProducts(response.data);
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error.response?.data?.error || "Failed to load products"
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 👇 Handle Delete Function Added Here
+  const handleDelete = async () => {
+    try {
+      await api.delete(
+        `/api/admin/products/${deleteProduct.product_id}`
+      );
+
+      toast.success("Product deleted successfully");
+
+      setDeleteOpen(false);
+      setDeleteProduct(null);
+
+      fetchProducts(); // Refresh list after deletion
+    } catch (error) {
+      console.error(error);
+      toast.error(
+        error.response?.data?.error ||
+        "Failed to delete product"
+      );
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -72,8 +123,10 @@ function Products() {
         </div>
       </div>
 
-      {/* Product Table */}
+      {/* Step 10.4: Product Table with products and loading props */}
       <ProductTable
+        products={products}
+        loading={loading}
         onView={(product) => {
           setViewProduct(product);
           setViewOpen(true);
@@ -94,13 +147,14 @@ function Products() {
       <ProductModal
         open={openModal}
         product={selectedProduct}
+        fetchProducts={fetchProducts}
         onClose={() => {
           setOpenModal(false);
           setSelectedProduct(null);
         }}
       />
 
-      {/* View Product Modal (Added) */}
+      {/* View Product Modal */}
       <ViewProductModal
         open={viewOpen}
         product={viewProduct}
@@ -118,11 +172,7 @@ function Products() {
           setDeleteOpen(false);
           setDeleteProduct(null);
         }}
-        onDelete={() => {
-          console.log("Delete", deleteProduct);
-          setDeleteOpen(false);
-          setDeleteProduct(null);
-        }}
+        onDelete={handleDelete}
       />
 
     </div>

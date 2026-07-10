@@ -1,13 +1,22 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
 
 function ProtectedRoute() {
   const location = useLocation();
 
-  // TODO:
-  // Replace with AuthContext / Redux / Zustand later
-  const token = localStorage.getItem("adminToken");
+  const { admin, loading } = useAuth();
 
-  if (!token) {
+  // Auth check hone tak wait karo
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        Loading...
+      </div>
+    );
+  }
+
+  // Login nahi hai to login page pe bhej do
+  if (!admin) {
     return (
       <Navigate
         to="/admin/login"
@@ -17,6 +26,7 @@ function ProtectedRoute() {
     );
   }
 
+  // Login hai to requested page dikhao
   return <Outlet />;
 }
 

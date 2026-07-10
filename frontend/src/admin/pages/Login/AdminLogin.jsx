@@ -5,10 +5,16 @@ import {
   FaEye,
   FaEyeSlash,
 } from "react-icons/fa";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom"; 
+import api from "../../../services/api"; 
+import toast from "react-hot-toast"; 
+import { useAuth } from "../../context/AuthContext"; // <-- Step 1: Integrated AuthContext Import
 
 function AdminLogin() {
+  const navigate = useNavigate(); 
+  const { login } = useAuth(); // <-- Step 2: Injected login method from Context Hook
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false); 
 
   const [formData, setFormData] = useState({
     email: "",
@@ -25,17 +31,38 @@ function AdminLogin() {
     });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log(formData);
-    // TODO: Login API, JWT Token, Navigate("/admin/dashboard")
+    setLoading(true);
+
+    try {
+      const response = await api.post("/api/admin/login", {
+        email: formData.email,
+        password: formData.password,
+      });
+
+      const { token, admin } = response.data;
+
+      // <-- Step 3 & 4: Deleted manual localStorage and hooked into global state wrapper
+      login(token, admin);
+
+      toast.success("Login Successful");
+      navigate("/admin/dashboard");
+    } catch (error) {
+      console.error("ADMIN LOGIN CLIENT ERROR:", error);
+      toast.error(
+        error.response?.data?.error || "Login Failed"
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-[#F8F6F2] flex items-center justify-center p-6">
       <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-gray-200 p-8">
         
-        {/* Updated Logo with Public Absolute Path */}
+        {/* Logo */}
         <div className="flex justify-center">
           <img
             src="/mk-logo.png"
@@ -104,7 +131,7 @@ function AdminLogin() {
             </div>
           </div>
 
-          {/* Remember */}
+          {/* Remember & Forgot Password */}
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 text-sm select-none cursor-pointer">
               <input
@@ -127,9 +154,10 @@ function AdminLogin() {
           {/* Login Button */}
           <button
             type="submit"
-            className="w-full rounded-xl bg-[#C9A227] py-3 font-semibold text-white transition hover:bg-[#B08D1F]"
+            disabled={loading}
+            className="w-full rounded-xl bg-[#C9A227] py-3 font-semibold text-white transition hover:bg-[#B08D1F] disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            Login
+            {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
