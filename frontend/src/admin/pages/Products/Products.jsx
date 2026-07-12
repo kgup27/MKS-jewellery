@@ -50,9 +50,10 @@ function Products() {
 
   // 👇 Handle Delete Function Added Here
   const handleDelete = async () => {
+    console.log(deleteProduct);
     try {
       await api.delete(
-        `/api/admin/products/${deleteProduct.product_id}`
+        `/api/admin/products/${deleteProduct.id}`
       );
 
       toast.success("Product deleted successfully");
