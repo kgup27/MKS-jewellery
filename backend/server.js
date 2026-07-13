@@ -111,31 +111,113 @@ app.post("/api/auth/reset-password", (req, res) => res.json({ message: "Password
 // ==========================================
 // PRODUCTS CATALOG & FILTERS APIs
 // ==========================================
+
+// GET All Products (With updated schema details and sorting)
 app.get("/api/products", async (req, res) => {
   try {
-    let { search, category, minPrice, maxPrice } = req.query;
-    let params = [];
-    let query = "SELECT * FROM products WHERE is_active = true";
+    const { search, category, minPrice, maxPrice } = req.query;
 
-    if (search) { params.push(`%${search}%`); query += ` AND (title ILIKE $${params.length} OR description ILIKE $${params.length})`; }
-    if (category) { params.push(category); query += ` AND category = $${params.length}`; }
-    if (minPrice) { params.push(minPrice); query += ` AND price >= $${params.length}`; }
-    if (maxPrice) { params.push(maxPrice); query += ` AND price <= $${params.length}`; }
+    let query = `
+      SELECT
+        id,
+        title,
+        description,
+        price,
+        discounted_price,
+        discount_percent,
+        quantity,
+        brand,
+        color,
+        image_url,
+        category,
+        is_active,
+        created_at
+      FROM products
+      WHERE is_active = true
+    `;
+
+    let params = [];
+
+    if (search) {
+      params.push(`%${search}%`);
+      query += ` AND (title ILIKE $${params.length} OR description ILIKE $${params.length})`;
+    }
+
+    if (category) {
+      params.push(category);
+      query += ` AND category = $${params.length}`;
+    }
+
+    if (minPrice) {
+      params.push(minPrice);
+      query += ` AND price >= $${params.length}`;
+    }
+
+    if (maxPrice) {
+      params.push(maxPrice);
+      query += ` AND price <= $${params.length}`;
+    }
+
+    query += ` ORDER BY created_at DESC`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);
-  } catch (err) { res.status(500).json({ error: "Filtering failed." }); }
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to fetch products"
+    });
+  }
 });
 
+// GET Single Product
 app.get("/api/products/:id", async (req, res) => {
-  const result = await pool.query("SELECT * FROM products WHERE id = $1 AND is_active = true", [req.params.id]);
-  if (result.rows.length === 0) return res.status(404).json({ error: "Product not found." });
-  res.json(result.rows[0]);
+  try {
+    const result = await pool.query(
+      `
+      SELECT *
+      FROM products
+      WHERE id=$1
+      AND is_active=true
+      `,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Product not found"
+      });
+    }
+
+    res.json(result.rows[0]);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed"
+    });
+  }
 });
 
+// Categories API
 app.get("/api/categories", async (req, res) => {
-  const result = await pool.query("SELECT DISTINCT category FROM products WHERE is_active = true");
-  res.json(result.rows.map(r => r.category));
+  try {
+    const result = await pool.query(`
+      SELECT DISTINCT category
+      FROM products
+      WHERE is_active=true
+      ORDER BY category
+    `);
+
+    res.json(result.rows.map(r => r.category));
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed"
+    });
+  }
 });
 
 // ==========================================
@@ -226,39 +308,30 @@ app.get("/api/reviews", (req, res) => res.json([]));
 app.post("/api/reviews", authenticateToken, (req, res) => res.json({ message: "Review posted." }));
 
 // =========================================================================
-// ADMIN CONTROL PANEL APIs (With Debug Logs)
+// ADMIN CONTROL PANEL APIs 
 // =========================================================================
 app.post("/api/admin/login", async (req, res) => {
   const { email, password } = req.body;
-
   console.log("EMAIL:", email);
 
   const result = await pool.query(
     "SELECT * FROM users WHERE email = $1 AND role = 'admin'",
     [email.trim().toLowerCase()]
   );
-
   console.log("RESULT:", result.rows);
 
   const admin = result.rows[0];
-
   if (!admin) {
     console.log("❌ Admin not found");
-    return res.status(401).json({
-      error: "Admin not found",
-    });
+    return res.status(401).json({ error: "Admin not found" });
   }
 
   console.log("PASSWORD HASH:", admin.password_hash);
-
   const match = await bcrypt.compare(password, admin.password_hash);
-
   console.log("PASSWORD MATCH:", match);
 
   if (!match) {
-    return res.status(401).json({
-      error: "Wrong password",
-    });
+    return res.status(401).json({ error: "Wrong password" });
   }
 
   const token = jwt.sign(
@@ -269,11 +342,7 @@ app.post("/api/admin/login", async (req, res) => {
 
   res.json({
     token,
-    admin: {
-      id: admin.id,
-      email: admin.email,
-      full_name: admin.full_name,
-    },
+    admin: { id: admin.id, email: admin.email, full_name: admin.full_name }
   });
 });
 
@@ -285,36 +354,306 @@ app.get("/api/admin/dashboard", authenticateToken, requireAdmin, async (req, res
 });
 
 app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res) => {
-  const { title, description, price, quantity, category, image_url } = req.body;
-  const n = await pool.query(
-    "INSERT INTO products (title, description, price, quantity, category, image_url) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-    [title, description, price, quantity, category, image_url]
-  );
-  res.status(201).json(n.rows[0]);
+  try {
+    const {
+      title,
+      description,
+      price,
+      discounted_price,
+      discount_percent,
+      quantity,
+      brand,
+      color,
+      image_url,
+      category,
+      is_active
+    } = req.body;
+
+    const result = await pool.query(
+      `
+      INSERT INTO products
+      (
+        title,
+        description,
+        price,
+        discounted_price,
+        discount_percent,
+        quantity,
+        brand,
+        color,
+        image_url,
+        category,
+        is_active
+      )
+      VALUES
+      (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
+      )
+      RETURNING *
+      `,
+      [
+        title,
+        description,
+        price,
+        discounted_price || null,
+        discount_percent || 0,
+        quantity,
+        brand,
+        color,
+        image_url,
+        category,
+        is_active ?? true
+      ]
+    );
+
+    res.status(201).json({
+      message: "Product added successfully",
+      product: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to add product"
+    });
+  }
 });
 
 app.put("/api/admin/products/:id", authenticateToken, requireAdmin, async (req, res) => {
-  const { title, description, price, quantity, category, image_url } = req.body;
-  const u = await pool.query(
-    "UPDATE products SET title=$1, description=$2, price=$3, quantity=$4, category=$5, image_url=$6 WHERE id=$7 RETURNING *",
-    [title, description, price, quantity, category, image_url, req.params.id]
-  );
-  res.json(u.rows[0]);
+  try {
+    const {
+      title,
+      description,
+      price,
+      discounted_price,
+      discount_percent,
+      quantity,
+      brand,
+      color,
+      image_url,
+      category,
+      is_active
+    } = req.body;
+
+    const result = await pool.query(
+      `
+      UPDATE products
+      SET
+        title = $1,
+        description = $2,
+        price = $3,
+        discounted_price = $4,
+        discount_percent = $5,
+        quantity = $6,
+        brand = $7,
+        color = $8,
+        image_url = $9,
+        category = $10,
+        is_active = $11,
+        updated_at = NOW()
+      WHERE id = $12
+      RETURNING *
+      `,
+      [
+        title,
+        description,
+        price,
+        discounted_price || null,
+        discount_percent || 0,
+        quantity,
+        brand,
+        color,
+        image_url,
+        category,
+        is_active ?? true,
+        req.params.id
+      ]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Product not found"
+      });
+    }
+
+    res.json({
+      message: "Product updated successfully",
+      product: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to update product"
+    });
+  }
 });
 
+// [UPDATED] Clean soft-delete integration mapping error payloads and timestamp records
 app.delete("/api/admin/products/:id", authenticateToken, requireAdmin, async (req, res) => {
-  await pool.query("UPDATE products SET is_active = false WHERE id = $1", [req.params.id]);
-  res.json({ message: "Product deactivated cleanly." });
+  try {
+    const result = await pool.query(
+      `
+      UPDATE products
+      SET
+        is_active = false,
+        updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+      `,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Product not found"
+      });
+    }
+
+    res.json({
+      message: "Product deleted successfully",
+      product: result.rows[0]
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to delete product"
+    });
+  }
 });
 
 app.get("/api/admin/orders", authenticateToken, requireAdmin, async (req, res) => {
-  const list = await pool.query("SELECT o.*, u.full_name FROM orders o JOIN users u ON o.user_id = u.id ORDER BY o.created_at DESC");
-  res.json(list.rows);
+  try {
+    const result = await pool.query(`
+      SELECT
+        o.id,
+        o.total_amount,
+        o.status,
+        o.created_at,
+        u.full_name,
+        u.email,
+        COALESCE(
+          (
+            SELECT p.title
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = o.id
+            LIMIT 1
+          ),
+          'No Product'
+        ) AS product,
+        COALESCE(
+          (
+            SELECT p.image_url
+            FROM order_items oi
+            JOIN products p ON oi.product_id = p.id
+            WHERE oi.order_id = o.id
+            LIMIT 1
+          ),
+          ''
+        ) AS image
+      FROM orders o
+      JOIN users u ON u.id = o.user_id
+      ORDER BY o.created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch orders" });
+  }
 });
 
-app.put("/api/admin/orders/:id", authenticateToken, requireAdmin, async (req, res) => {
-  const updated = await pool.query("UPDATE orders SET status = $1 WHERE id = $2 RETURNING *", [req.body.status, req.params.id]);
-  res.json({ updated: updated.rows[0] });
+app.get("/api/admin/orders/:id", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const order = await pool.query(
+      `
+      SELECT o.*, u.full_name, u.email
+      FROM orders o
+      JOIN users u ON o.user_id=u.id
+      WHERE o.id=$1
+      `,
+      [req.params.id]
+    );
+
+    const items = await pool.query(
+      `
+      SELECT oi.*, p.title, p.image_url
+      FROM order_items oi
+      JOIN products p ON oi.product_id=p.id
+      WHERE oi.order_id=$1
+      `,
+      [req.params.id]
+    );
+
+    res.json({
+      order: order.rows[0],
+      items: items.rows
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch order" });
+  }
+});
+
+app.put("/api/admin/orders/:id/status", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { status } = req.body;
+    const updated = await pool.query(
+      `
+      UPDATE orders
+      SET status=$1
+      WHERE id=$2
+      RETURNING *
+      `,
+      [status, req.params.id]
+    );
+    res.json(updated.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to update status" });
+  }
+});
+
+app.get("/api/admin/orders/stats", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const total = await pool.query("SELECT COUNT(*) FROM orders");
+    const pending = await pool.query("SELECT COUNT(*) FROM orders WHERE status='PENDING'");
+    const processing = await pool.query("SELECT COUNT(*) FROM orders WHERE status='PROCESSING'");
+    const shipped = await pool.query("SELECT COUNT(*) FROM orders WHERE status='SHIPPED'");
+    const delivered = await pool.query("SELECT COUNT(*) FROM orders WHERE status='DELIVERED'");
+    const cancelled = await pool.query("SELECT COUNT(*) FROM orders WHERE status='CANCELLED'");
+
+    res.json({
+      total: total.rows[0].count,
+      pending: pending.rows[0].count,
+      processing: processing.rows[0].count,
+      shipped: shipped.rows[0].count,
+      delivered: delivered.rows[0].count,
+      cancelled: cancelled.rows[0].count
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed" });
+  }
+});
+
+app.put("/api/admin/orders/:id/cancel", authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      UPDATE orders
+      SET status='CANCELLED'
+      WHERE id=$1
+      RETURNING *
+      `,
+      [req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Cancel failed" });
+  }
 });
 
 app.get("/api/admin/users", authenticateToken, requireAdmin, async (req, res) => {

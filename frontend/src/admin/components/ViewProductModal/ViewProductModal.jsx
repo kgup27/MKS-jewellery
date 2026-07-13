@@ -6,6 +6,13 @@ function ViewProductModal({
   product,
 }) {
   if (!open || !product) return null;
+  const getStatus = () => {
+    if (product.quantity <= 0) return "Out of Stock";
+    if (product.quantity <= 10) return "Low Stock";
+    return "Active";
+  };
+
+  const status = getStatus();
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -43,8 +50,8 @@ function ViewProductModal({
           <div>
 
             <img
-              src={product.image}
-              alt={product.name}
+              src={product.image_url || "/no-image.png"}
+              alt={product.title}
               className="h-[420px] w-full rounded-2xl border object-cover"
             />
 
@@ -57,7 +64,7 @@ function ViewProductModal({
             <div>
 
               <h2 className="text-3xl font-bold text-gray-900">
-                {product.name}
+                {product.title}
               </h2>
 
               <p className="mt-2 text-gray-500">
@@ -99,7 +106,7 @@ function ViewProductModal({
                 </p>
 
                 <h3 className="mt-1 font-semibold">
-                  {product.stock}
+                  {product.quantity}
                 </h3>
 
               </div>
@@ -112,14 +119,14 @@ function ViewProductModal({
 
                 <span
                   className={`mt-2 inline-flex rounded-full px-3 py-1 text-sm font-semibold ${
-                    product.status === "Active"
+                    status === "Active"
                       ? "bg-green-100 text-green-700"
                       : product.status === "Low Stock"
                       ? "bg-yellow-100 text-yellow-700"
                       : "bg-red-100 text-red-700"
                   }`}
                 >
-                  {product.status}
+                  {status}
                 </span>
 
               </div>

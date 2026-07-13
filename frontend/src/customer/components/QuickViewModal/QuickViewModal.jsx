@@ -27,8 +27,11 @@ function QuickViewModal({ open, onClose, product }) {
 
           {/* Image */}
           <img
-            src={product.image}
-            alt={product.name}
+            src={
+              product.image_url ||
+              "https://placehold.co/600x600?text=No+Image"
+            }
+            alt={product.title}
             className="h-64 w-full rounded-2xl object-cover sm:h-80 lg:h-[500px]"
           />
 
@@ -40,18 +43,20 @@ function QuickViewModal({ open, onClose, product }) {
             </p>
 
             <h2 className="mt-3 text-3xl lg:text-4xl font-bold">
-              {product.name}
+              {product.title}
             </h2>
 
             <div className="mt-5 flex items-center gap-4 flex-wrap">
 
               <span className="text-2xl lg:text-3xl font-bold">
-                ₹{product.price}
+                ₹{Number(product.price).toLocaleString("en-IN")}
               </span>
 
-              <span className="text-lg text-gray-400 line-through">
-                ₹{product.oldPrice}
-              </span>
+              {product.discounted_price > product.price && (
+                <span className="text-lg text-gray-400 line-through">
+                  ₹{Number(product.discounted_price).toLocaleString("en-IN")}
+                </span>
+              )}
 
             </div>
 

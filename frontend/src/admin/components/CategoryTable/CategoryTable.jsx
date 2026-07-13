@@ -1,7 +1,8 @@
 import CategoryRow from "../CategoryRow/CategoryRow";
-import { categoriesData } from "../../data/categoriesData";
 
 function CategoryTable({
+  categories,
+  loading,
   onView,
   onEdit,
   onDelete,
@@ -51,17 +52,36 @@ function CategoryTable({
 
           <tbody>
 
-            {categoriesData.map((category) => (
-
-              <CategoryRow
-                key={category.id}
-                category={category}
-                onView={onView}
-                onEdit={onEdit}
-                onDelete={onDelete}
-              />
-
-            ))}
+            {/* Loading, Empty, and Data Render Logic */}
+            {loading ? (
+              <tr>
+                <td
+                  colSpan="7"
+                  className="py-12 text-center text-gray-500"
+                >
+                  Loading categories...
+                </td>
+              </tr>
+            ) : categories.length === 0 ? (
+              <tr>
+                <td
+                  colSpan="7"
+                  className="py-12 text-center text-gray-500"
+                >
+                  No categories found.
+                </td>
+              </tr>
+            ) : (
+              categories.map((category) => (
+                <CategoryRow
+                  key={category.id}
+                  category={category}
+                  onView={onView}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+              ))
+            )}
 
           </tbody>
 

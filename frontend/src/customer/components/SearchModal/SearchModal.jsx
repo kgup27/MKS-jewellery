@@ -1,18 +1,29 @@
 import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { FiSearch, FiX } from "react-icons/fi";
-import products from "../../data/products";
+import api from "../../../services/api";
 
 function SearchModal({ open, onClose }) {
   const [search, setSearch] = useState("");
+  const [products, setProducts] = useState([]);
 
   const inputRef = useRef(null);
 
   useEffect(() => {
     if (open) {
       inputRef.current?.focus();
+      fetchProducts();
     }
   }, [open]);
+
+  const fetchProducts = async () => {
+    try {
+      const response = await api.get("/api/products");
+      setProducts(response.data);
+    } catch (error) {
+      console.error(error);
+    }
+  };
 
   useEffect(() => {
     const handleEsc = (e) => {
@@ -35,7 +46,7 @@ function SearchModal({ open, onClose }) {
     const value = search.toLowerCase();
 
     return (
-      product.name.toLowerCase().includes(value) ||
+      product.title.toLowerCase().includes(value) ||
       product.category.toLowerCase().includes(value)
     );
   });
@@ -43,6 +54,7 @@ function SearchModal({ open, onClose }) {
   return (
     <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-black/40 p-6">
       <div className="mt-16 w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl">
+
         {/* Header */}
         <div className="mb-6 flex items-center justify-between">
           <h2 className="text-2xl font-bold">
@@ -60,7 +72,7 @@ function SearchModal({ open, onClose }) {
           </button>
         </div>
 
-        {/* Search Input */}
+        {/* Search */}
         <div className="relative">
           <FiSearch className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-500" />
 
@@ -74,7 +86,7 @@ function SearchModal({ open, onClose }) {
           />
         </div>
 
-        {/* Results Count */}
+        {/* Result Count */}
         {search && (
           <p className="mb-4 mt-5 text-sm text-gray-500">
             {filteredProducts.length} Result
@@ -82,7 +94,7 @@ function SearchModal({ open, onClose }) {
           </p>
         )}
 
-        {/* Search Results */}
+        {/* Results */}
         <div className="max-h-96 overflow-y-auto">
           {search === "" ? (
             <p className="text-center text-gray-500">
@@ -106,14 +118,17 @@ function SearchModal({ open, onClose }) {
                 >
                   <img
                     loading="lazy"
-                    src={product.image}
-                    alt={product.name}
+                    src={
+                      product.image_url ||
+                      "https://placehold.co/100x100?text=No+Image"
+                    }
+                    alt={product.title}
                     className="h-20 w-20 rounded-xl object-cover"
                   />
 
                   <div>
                     <h3 className="font-semibold">
-                      {product.name}
+                      {product.title}
                     </h3>
 
                     <p className="text-gray-500">
@@ -121,14 +136,16 @@ function SearchModal({ open, onClose }) {
                     </p>
 
                     <p className="mt-1 font-bold text-[#C9A227]">
-                      ₹{product.price}
+                      ₹{Number(product.price).toLocaleString("en-IN")}
                     </p>
                   </div>
+
                 </Link>
               ))}
             </div>
           )}
         </div>
+
       </div>
     </div>
   );

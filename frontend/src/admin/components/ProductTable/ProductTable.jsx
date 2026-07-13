@@ -33,7 +33,7 @@ function ProductTable({
             ) : !products || products.length === 0 ? ( // Safe check: handles null, undefined, or empty array
               <tr>
                 <td colSpan="7" className="py-8 text-center text-gray-500">
-                  No Products Found
+                  No products match your search or filter.
                 </td>
               </tr>
             ) : (

@@ -1,11 +1,48 @@
 import { motion } from "framer-motion";
-import products from "../../data/products";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
+import api from "../../../services/api";
+
 import ProductCard from "../ProductCard/ProductCard";
 
 function FeaturedProducts() {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+
+      const response = await api.get("/api/products");
+
+      // Sirf first 8 products dikhayenge
+      setProducts(response.data.slice(0, 8));
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load products");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  if (loading) {
+    return (
+      <section className="bg-[#F8F6F2] py-20">
+        <div className="mx-auto max-w-7xl px-6 text-center">
+          <h2 className="text-2xl font-semibold">
+            Loading Products...
+          </h2>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="bg-[#F8F6F2] py-20">
-
       <div className="mx-auto max-w-7xl px-6">
 
         {/* Heading */}
@@ -62,7 +99,6 @@ function FeaturedProducts() {
         </motion.div>
 
       </div>
-
     </section>
   );
 }

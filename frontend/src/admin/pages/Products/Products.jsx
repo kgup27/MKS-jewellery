@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"; // Combined useState and useEffect
+import { useState, useEffect } from "react"; 
 import { FaPlus, FaSearch, FaFilter } from "react-icons/fa";
 import toast from "react-hot-toast";
 
@@ -24,14 +24,21 @@ function Products() {
   const [viewOpen, setViewOpen] = useState(false);
   const [viewProduct, setViewProduct] = useState(null); 
 
-  // Step 10.2: API Data & Loading States
+  // API Data & Loading States
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Search & Category States
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
 
-  // Step 10.3: Fetch Products on Component Mount
+  // 🔹 Step 7.1: Pagination states configured below
+  const [currentPage, setCurrentPage] = useState(1);
+  const productsPerPage = 10;
+
   useEffect(() => {
     fetchProducts();
-  }, []);
+  }, []); 
 
   const fetchProducts = async () => {
     try {
@@ -40,34 +47,54 @@ function Products() {
       setProducts(response.data);
     } catch (error) {
       console.error(error);
-      toast.error(
-        error.response?.data?.error || "Failed to load products"
-      );
+      toast.error(error.response?.data?.error || "Failed to load products");
     } finally {
       setLoading(false);
     }
   };
 
-  // 👇 Handle Delete Function Added Here
+  // Client-side Filter logic
+  const filteredProducts = products.filter((product) => {
+    const matchesSearch =
+      product.title?.toLowerCase().includes(search.toLowerCase()) ||
+      product.description?.toLowerCase().includes(search.toLowerCase());
+
+    const matchesCategory =
+      category === "" || product.category === category;
+
+    return matchesSearch && matchesCategory;
+  });
+
+  // 🔹 Step 7.2: Slice calculation logic for current page context
+  const indexOfLastProduct = currentPage * productsPerPage;
+  const indexOfFirstProduct = indexOfLastProduct - productsPerPage;
+  
+  // Current visible window of paginated items
+  const currentProducts = filteredProducts.slice(
+    indexOfFirstProduct,
+    indexOfLastProduct
+  );
+  
+  const totalPages = Math.ceil(
+    filteredProducts.length / productsPerPage
+  );
+
+  // 🔹 Step 7.4: Reset current view scope to Page 1 when parameters shift
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, category]);
+
+  // Handle Delete Function
   const handleDelete = async () => {
-    console.log(deleteProduct);
     try {
-      await api.delete(
-        `/api/admin/products/${deleteProduct.id}`
-      );
-
+      await api.delete(`/api/admin/products/${deleteProduct.id}`);
       toast.success("Product deleted successfully");
-
       setDeleteOpen(false);
       setDeleteProduct(null);
-
-      fetchProducts(); // Refresh list after deletion
+      fetchProducts(); 
     } catch (error) {
       console.error(error);
-      toast.error(
-        error.response?.data?.error ||
-        "Failed to delete product"
-      );
+      toast.error(error.response?.data?.error || "Failed to delete product");
     }
   };
 
@@ -77,9 +104,7 @@ function Products() {
       {/* Header */}
       <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">
-            Products
-          </h1>
+          <h1 className="text-3xl font-bold text-gray-900">Products</h1>
           <p className="mt-2 text-gray-500">
             Manage all jewellery products in your inventory.
           </p>
@@ -97,7 +122,7 @@ function Products() {
         </button>
       </div>
 
-      {/* Search */}
+      {/* Search & Filter Section */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
           <div className="relative lg:col-span-2">
@@ -105,28 +130,61 @@ function Products() {
             <input
               type="text"
               placeholder="Search products..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-xl border border-gray-300 py-3 pl-11 pr-4 outline-none focus:border-[#C9A227]"
             />
           </div>
 
-          <select className="rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#C9A227]">
-            <option>All Categories</option>
-            <option>Ring</option>
-            <option>Necklace</option>
-            <option>Bracelet</option>
-            <option>Earrings</option>
+          <select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            className="rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#C9A227]"
+          >
+            <option value="">All Categories</option>
+            <option value="Ring">Ring</option>
+            <option value="Necklace">Necklace</option>
+            <option value="Bracelet">Bracelet</option>
+            <option value="Earrings">Earrings</option>
+            <option value="Pendant">Pendant</option>
+            <option value="Bangles">Bangles</option>
           </select>
 
-          <button className="flex items-center justify-center gap-2 rounded-xl border border-gray-300 hover:bg-gray-50">
+          <button
+            onClick={() => {
+              setSearch("");
+              setCategory("");
+            }}
+            className="flex items-center justify-center gap-2 rounded-xl border border-gray-300 px-4 py-3 transition hover:bg-gray-50 text-gray-700 font-medium"
+          >
             <FaFilter />
-            Filter
+            Clear Filters
           </button>
         </div>
       </div>
 
-      {/* Step 10.4: Product Table with products and loading props */}
+      {/* Live Item Counter */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-gray-500">
+          Showing{" "}
+          <span className="font-semibold text-gray-800">
+            {filteredProducts.length > 0 ? indexOfFirstProduct + 1 : 0}
+          </span>{" "}
+          to{" "}
+          <span className="font-semibold text-gray-800">
+            {Math.min(indexOfLastProduct, filteredProducts.length)}
+          </span>{" "}
+          of{" "}
+          <span className="font-semibold text-gray-800">
+            {filteredProducts.length}
+          </span>{" "}
+          products (filtered from {products.length} total)
+        </p>
+      </div>
+
+      {/* 🔹 Step 7.3: Product Table ko updated currentProducts assign kar diya */}
       <ProductTable
-        products={products}
+        products={currentProducts}
         loading={loading}
         onView={(product) => {
           setViewProduct(product);
@@ -142,9 +200,16 @@ function Products() {
         }}
       />
 
-      <Pagination />
+      {/* 🔹 Step 7.5: Connect Pagination component props */}
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        setCurrentPage={setCurrentPage}
+        totalProducts={filteredProducts.length}
+        productsPerPage={productsPerPage}
+      />
 
-      {/* Product Form Modal */}
+      {/* Modals */}
       <ProductModal
         open={openModal}
         product={selectedProduct}
@@ -155,7 +220,6 @@ function Products() {
         }}
       />
 
-      {/* View Product Modal */}
       <ViewProductModal
         open={viewOpen}
         product={viewProduct}
@@ -165,7 +229,6 @@ function Products() {
         }}
       />
 
-      {/* Delete Confirmation Modal */}
       <DeleteModal
         open={deleteOpen}
         product={deleteProduct}
