@@ -9,7 +9,7 @@ import DeleteModal from "../../components/DeleteModal/DeleteModal";
 import ViewProductModal from "../../components/ViewProductModal/ViewProductModal";
 
 // API service import
-import api from "../../../services/api";
+import adminApi from "../../../services/adminApi";
 
 function Products() {
   // Existing Modal States
@@ -43,7 +43,7 @@ function Products() {
   const fetchProducts = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/products");
+      const response = await adminApi.get("/api/products");
       setProducts(response.data);
     } catch (error) {
       console.error(error);
@@ -87,7 +87,7 @@ function Products() {
   // Handle Delete Function
   const handleDelete = async () => {
     try {
-      await api.delete(`/api/admin/products/${deleteProduct.id}`);
+      await adminApi.delete(`/api/admin/products/${deleteProduct.id}`);
       toast.success("Product deleted successfully");
       setDeleteOpen(false);
       setDeleteProduct(null);

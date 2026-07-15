@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { FaTimes } from "react-icons/fa";
-import api from "../../../services/api";
+import adminApi from "../../../services/adminApi";
 import toast from "react-hot-toast";
 
 function ProductModal({ open, onClose, product = null, fetchProducts }) {
@@ -27,7 +27,7 @@ function ProductModal({ open, onClose, product = null, fetchProducts }) {
   // 1. Fetch categories from backend API
   const fetchCategories = async () => {
     try {
-      const response = await api.get("/api/categories");
+      const response = await adminApi.get("/api/categories");
       setCategories(response.data);
     } catch (error) {
       console.error("Failed to fetch categories:", error);
@@ -117,11 +117,11 @@ function ProductModal({ open, onClose, product = null, fetchProducts }) {
 
       if (product) {
         // Update API
-        await api.put(`/api/admin/products/${product.id}`, formData);
+        await adminApi.put(`/api/admin/products/${product.id}`, formData);
         toast.success("Product updated successfully");
       } else {
         // Add API
-        await api.post("/api/admin/products", formData);
+        await adminApi.post("/api/admin/products", formData);
         toast.success("Product added successfully");
       }
 

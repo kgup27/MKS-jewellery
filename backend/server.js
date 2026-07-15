@@ -92,21 +92,492 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 app.get("/api/auth/profile", authenticateToken, async (req, res) => {
-  const profile = await pool.query("SELECT id, email, full_name, role, profile_image FROM users WHERE id = $1", [req.user.id]);
-  res.json(profile.rows[0]);
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        u.id,
+        u.email,
+        u.full_name,
+        u.role,
+        u.profile_image,
+
+        a.address_id,
+        a.phone,
+        a.address_line1,
+        a.address_line2,
+        a.city,
+        a.state,
+        a.pincode,
+        a.country
+
+      FROM users u
+
+      LEFT JOIN addresses a
+      ON u.id = a.user_id
+
+      WHERE u.id = $1
+
+      ORDER BY a.address_id DESC
+
+      LIMIT 1
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to load profile.",
+    });
+  }
 });
 
 app.put("/api/auth/profile", authenticateToken, async (req, res) => {
-  const { full_name, profile_image } = req.body;
-  const updated = await pool.query(
-    "UPDATE users SET full_name = $1, profile_image = $2 WHERE id = $3 RETURNING id, email, full_name, profile_image",
-    [full_name, profile_image, req.user.id]
-  );
-  res.json(updated.rows[0]);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const {
+      full_name,
+      phone,
+      address_line1,
+      address_line2,
+      city,
+      state,
+      pincode,
+      country,
+    } = req.body;
+
+    await client.query(
+      `
+      UPDATE users
+      SET
+      full_name=$1,
+      profile_image=$2
+      WHERE id=$3
+      `,
+      [
+        full_name,
+        profile_image,
+        req.user.id,
+      ]
+    );
+
+    const address = await client.query(
+      `
+      SELECT address_id
+      FROM addresses
+      WHERE user_id=$1
+      ORDER BY address_id DESC
+      LIMIT 1
+      `,
+      [req.user.id]
+    );
+
+    if (address.rows.length > 0) {
+      await client.query(
+        `
+        UPDATE addresses
+        SET
+
+        phone=$1,
+        address_line1=$2,
+        address_line2=$3,
+        city=$4,
+        state=$5,
+        pincode=$6,
+        country=$7,
+        full_name=$8
+
+        WHERE address_id=$9
+        `,
+        [
+          phone,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          pincode,
+          country,
+          full_name,
+          address.rows[0].address_id,
+        ]
+      );
+    } else {
+      await client.query(
+        `
+        INSERT INTO addresses
+        (
+          user_id,
+          full_name,
+          phone,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          pincode,
+          country,
+          is_default
+        )
+
+        VALUES
+        (
+          $1,$2,$3,$4,$5,$6,$7,$8,$9,true
+        )
+        `,
+        [
+          req.user.id,
+          full_name,
+          phone,
+          address_line1,
+          address_line2,
+          city,
+          state,
+          pincode,
+          country,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "Profile updated successfully.",
+    });
+  } catch (err) {
+    await client.query("ROLLBACK");
+    console.error(err);
+
+    res.status(500).json({
+      error: "Failed to update profile.",
+    });
+  } finally {
+    client.release();
+  }
 });
 
 app.post("/api/auth/forgot-password", (req, res) => res.json({ message: "Password reset link emitted securely to email destination." }));
 app.post("/api/auth/reset-password", (req, res) => res.json({ message: "Password updated matching target payload parameters." }));
+
+
+// ==========================================
+// SAVED ADDRESS APIs
+// ==========================================
+
+// GET ALL SAVED ADDRESSES
+app.get("/api/addresses", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `
+      SELECT
+        address_id,
+        full_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode,
+        country,
+        is_default
+      FROM addresses
+      WHERE user_id = $1
+      ORDER BY is_default DESC, address_id DESC
+      `,
+      [req.user.id]
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("========== FETCH ADDRESS ERROR ==========");
+    console.error("MESSAGE:", err.message);
+    console.error("DETAIL:", err.detail);
+    console.error("HINT:", err.hint);
+    console.error("CODE:", err.code);
+    console.error("STACK:", err.stack);
+
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
+// ADD NEW ADDRESS
+app.post("/api/addresses", authenticateToken, async (req, res) => {
+  console.log("BODY RECEIVED:");
+  console.log(req.body);
+  try {
+    const {
+      full_name,
+      phone,
+      address_line1,
+      address_line2,
+      city,
+      state,
+      pincode,
+      country,
+    } = req.body;
+
+    // Basic Validation
+    if (
+      !full_name ||
+      !phone ||
+      !address_line1 ||
+      !city ||
+      !state ||
+      !pincode ||
+      !country
+    ) {
+      return res.status(400).json({
+        error: "All required fields must be filled.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO addresses
+      (
+        user_id,
+        full_name,
+        phone,
+        address_line1,
+        address_line2,
+        city,
+        state,
+        pincode,
+        country,
+        is_default
+      )
+      VALUES
+      (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,false
+      )
+      RETURNING *
+      `,
+      [
+        req.user.id,
+        full_name,
+        phone,
+        address_line1,
+        address_line2 || "",
+        city,
+        state,
+        pincode,
+        country,
+      ]
+    );
+
+    res.status(201).json({
+      message: "Address added successfully.",
+      address: result.rows[0],
+    });
+
+  } catch (err) {
+    console.error("ADD ADDRESS ERROR:", err);
+
+    res.status(500).json({
+      error: "Failed to add address.",
+    });
+  }
+});
+
+// UPDATE ADDRESS (Debug logs added here)
+app.put("/api/addresses/:id", authenticateToken, async (req, res) => {
+  console.log("UPDATE API HIT");
+  console.log("Address ID:", req.params.id);
+  console.log("Body:", req.body);
+
+  try {
+    const {
+      full_name,
+      phone,
+      address_line1,
+      address_line2,
+      city,
+      state,
+      pincode,
+      country,
+    } = req.body;
+
+    // Check if address belongs to logged-in user
+    const check = await pool.query(
+      `
+      SELECT address_id
+      FROM addresses
+      WHERE address_id = $1
+      AND user_id = $2
+      `,
+      [req.params.id, req.user.id]
+    );
+
+    if (check.rows.length === 0) {
+      return res.status(404).json({
+        error: "Address not found.",
+      });
+    }
+
+    console.log("Updating Database...");
+
+    const result = await pool.query(
+      `
+      UPDATE addresses
+      SET
+        full_name = $1,
+        phone = $2,
+        address_line1 = $3,
+        address_line2 = $4,
+        city = $5,
+        state = $6,
+        pincode = $7,
+        country = $8
+      WHERE address_id = $9
+      RETURNING *
+      `,
+      [
+        full_name,
+        phone,
+        address_line1,
+        address_line2 || "",
+        city,
+        state,
+        pincode,
+        country,
+        req.params.id,
+      ]
+    );
+
+    res.json({
+      message: "Address updated successfully.",
+      address: result.rows[0],
+    });
+  } catch (err) {
+    console.log("========== UPDATE ADDRESS ERROR ==========");
+    console.log("MESSAGE:", err.message);
+    console.log("DETAIL:", err.detail);
+    console.log("HINT:", err.hint);
+    console.log("CODE:", err.code);
+    console.log(err);
+
+    res.status(500).json({
+      error: err.message,
+    });
+  }
+});
+
+// DELETE ADDRESS
+app.delete("/api/addresses/:id", authenticateToken, async (req, res) => {
+  try {
+    // Check if address belongs to logged-in user
+    const check = await pool.query(
+      `
+      SELECT address_id
+      FROM addresses
+      WHERE address_id = $1
+      AND user_id = $2
+      `,
+      [req.params.id, req.user.id]
+    );
+
+    if (check.rows.length === 0) {
+      return res.status(404).json({
+        error: "Address not found.",
+      });
+    }
+
+    await pool.query(
+      `
+      DELETE FROM addresses
+      WHERE address_id = $1
+      `,
+      [req.params.id]
+    );
+
+    res.json({
+      message: "Address deleted successfully.",
+    });
+  } catch (err) {
+    console.error("DELETE ADDRESS ERROR:", err);
+
+    if (err.code === "23503") {
+      return res.status(400).json({
+        error: "This address is linked to an order and cannot be deleted.",
+      });
+    }
+
+    res.status(500).json({
+      error: "Failed to delete address.",
+    });
+  }
+});
+
+// SET DEFAULT ADDRESS
+app.patch("/api/addresses/:id/default", authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Check if address belongs to logged-in user
+    const check = await client.query(
+      `
+      SELECT address_id
+      FROM addresses
+      WHERE address_id = $1
+      AND user_id = $2
+      `,
+      [req.params.id, req.user.id]
+    );
+
+    if (check.rows.length === 0) {
+      await client.query("ROLLBACK");
+
+      return res.status(404).json({
+        error: "Address not found.",
+      });
+    }
+
+    // Remove previous default
+    await client.query(
+      `
+      UPDATE addresses
+      SET is_default = false
+      WHERE user_id = $1
+      `,
+      [req.user.id]
+    );
+
+    // Set selected address as default
+    await client.query(
+      `
+      UPDATE addresses
+      SET is_default = true
+      WHERE address_id = $1
+      `,
+      [req.params.id]
+    );
+
+    await client.query("COMMIT");
+
+    res.json({
+      message: "Default address updated successfully.",
+    });
+
+  } catch (err) {
+    await client.query("ROLLBACK");
+
+    console.error("SET DEFAULT ADDRESS ERROR:", err);
+
+    res.status(500).json({
+      error: "Failed to update default address.",
+    });
+
+  } finally {
+    client.release();
+  }
+});
 
 // ==========================================
 // PRODUCTS CATALOG & FILTERS APIs
@@ -130,8 +601,7 @@ app.get("/api/products", async (req, res) => {
         color,
         image_url,
         category,
-        is_active,
-        created_at
+        is_active
       FROM products
       WHERE is_active = true
     `;
