@@ -3,43 +3,96 @@ import { useState } from "react";
 import LoadingButton from "../../components/LoadingButton/LoadingButton";
 import MainLayout from "../../layouts/MainLayout";
 import { useCart } from "../../context/CartContext";
-import { useCustomerAuth } from "../../context/CustomerAuthContext"; // <-- Step 1
-import toast from "react-hot-toast"; // <-- Step 1
+import { useCustomerAuth } from "../../context/CustomerAuthContext";
+import toast from "react-hot-toast";
+import api from "../../../services/api"; 
 
 function Checkout() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const { cart } = useCart();
-  const { isAuthenticated } = useCustomerAuth(); // <-- Step 2
+  const { cart, clearCart } = useCart();
+  const { isAuthenticated } = useCustomerAuth();
 
-  // 🔥 Fixed Subtotal Bug: Multiplying price with quantity
+  const [checkoutData, setCheckoutData] = useState({
+    fullName: "",
+    email: "",
+    phone: "",
+    city: "",
+    address: "",
+    pincode: "",
+    paymentMethod: "cod",
+  });
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setCheckoutData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
+  // ✅ 1. Safe Subtotal Calculation (Handles both price and price_at_time fields)
   const subtotal = cart.reduce(
-    (total, item) => total + item.price * (item.quantity || 1),
+    (total, item) =>
+      total + Number(item.price || item.price_at_time || 0) * (item.quantity || 1),
     0
   );
 
-  // 🔥 Step 3: Integrated Place Order Handler with Auth & Loading
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!isAuthenticated) {
       toast.error("Please login to place your order.");
       navigate("/login");
       return;
     }
 
-    // Checkout page khali cart par submit na ho jaye uske liye guard clause
     if (cart.length === 0) {
       toast.error("Your cart is empty!");
       return;
     }
 
+    const { fullName, email, phone, city, address, pincode, paymentMethod } = checkoutData;
+    if (!fullName || !email || !phone || !city || !address || !pincode) {
+      toast.error("Please fill out all the billing fields.");
+      return;
+    }
+
     setLoading(true);
 
-    // Simulating API Call
-    setTimeout(() => {
+    try {
+      const response = await api.post("/api/orders", {
+        fullName,
+        email,
+        phone,
+        city,
+        address,
+        pincode,
+        paymentMethod,
+      });
+
+      toast.success(response.data.message || "Order placed successfully!");
+      
+      if (clearCart) {
+        clearCart();
+      }
+      
+      // ✅ Updated to pass orderId in state history
+      navigate("/order-success", {
+        state: {
+          orderId: response.data.orderId,
+        },
+      });
+    } catch (error) {
+      console.error("Order processing failed:", error);
+      
+      // ✅ 2. Updated to check for error.response?.data?.error to match backend structure
+      toast.error(
+        error.response?.data?.error || 
+        error.response?.data?.message || 
+        "Failed to place order."
+      );
+    } finally {
       setLoading(false);
-      toast.success("Order placed successfully.");
-      navigate("/order-success");
-    }, 2000);
+    }
   };
 
   return (
@@ -57,50 +110,86 @@ function Checkout() {
               <div className="grid gap-6 md:grid-cols-2">
                 <input
                   type="text"
+                  name="fullName"
                   placeholder="Full Name"
+                  value={checkoutData.fullName}
+                  onChange={handleInputChange}
                   className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
                 />
                 <input
                   type="email"
+                  name="email"
                   placeholder="Email"
+                  value={checkoutData.email}
+                  onChange={handleInputChange}
                   className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
                 />
                 <input
                   type="tel"
+                  name="phone"
                   placeholder="Phone Number"
+                  value={checkoutData.phone}
+                  onChange={handleInputChange}
                   className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
                 />
                 <input
                   type="text"
+                  name="city"
                   placeholder="City"
+                  value={checkoutData.city}
+                  onChange={handleInputChange}
                   className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
                 />
               </div>
 
               <textarea
                 rows="5"
+                name="address"
                 placeholder="Complete Address"
+                value={checkoutData.address}
+                onChange={handleInputChange}
                 className="mt-6 w-full rounded-xl border p-4 outline-none focus:border-[#C9A227]"
               />
 
               <input
                 type="text"
+                name="pincode"
                 placeholder="Pincode"
+                value={checkoutData.pincode}
+                onChange={handleInputChange}
                 className="mt-6 w-full rounded-xl border p-4 outline-none focus:border-[#C9A227]"
               />
 
               <h3 className="mt-10 text-xl font-bold">Payment Method</h3>
               <div className="mt-5 space-y-4">
                 <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input type="radio" name="payment" defaultChecked />
+                  <input 
+                    type="radio" 
+                    name="paymentMethod" 
+                    value="cod"
+                    checked={checkoutData.paymentMethod === "cod"}
+                    onChange={handleInputChange}
+                  />
                   Cash on Delivery
                 </label>
                 <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input type="radio" name="payment" />
+                  <input 
+                    type="radio" 
+                    name="paymentMethod" 
+                    value="upi"
+                    checked={checkoutData.paymentMethod === "upi"}
+                    onChange={handleInputChange}
+                  />
                   UPI Payment
                 </label>
                 <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input type="radio" name="payment" />
+                  <input 
+                    type="radio" 
+                    name="paymentMethod" 
+                    value="card"
+                    checked={checkoutData.paymentMethod === "card"}
+                    onChange={handleInputChange}
+                  />
                   Credit / Debit Card
                 </label>
               </div>
@@ -112,13 +201,9 @@ function Checkout() {
 
               <div className="mt-8 space-y-5">
                 {cart.map((item, index) => (
-                  <div
-                    key={`${item.id}-${index}`}
-                    className="flex justify-between items-start"
-                  >
+                  <div key={`${item.id}-${index}`} className="flex justify-between items-start">
                     <div>
                       <p className="font-medium text-gray-800">{item.name}</p>
-                      {/* Displays Variant details cleanly under name */}
                       {(item.selectedColor || item.selectedSize) && (
                         <p className="text-xs text-gray-400 mt-0.5">
                           {item.selectedColor && `Color: ${item.selectedColor}`}
@@ -126,12 +211,11 @@ function Checkout() {
                           {item.selectedSize && `Size: ${item.selectedSize}`}
                         </p>
                       )}
-                      <p className="text-xs text-gray-500 mt-1">
-                        Qty: {item.quantity || 1}
-                      </p>
+                      <p className="text-xs text-gray-500 mt-1">Qty: {item.quantity || 1}</p>
                     </div>
+                    {/* Safe fallback for line item display as well */}
                     <span className="font-medium">
-                      ₹{item.price * (item.quantity || 1)}
+                      ₹{Number(item.price || item.price_at_time || 0) * (item.quantity || 1)}
                     </span>
                   </div>
                 ))}
@@ -149,7 +233,6 @@ function Checkout() {
                 </div>
               </div>
 
-              {/* Coupon */}
               <div className="mt-8">
                 <input
                   type="text"
@@ -161,7 +244,6 @@ function Checkout() {
                 </button>
               </div>
 
-              {/* 🔥 Step 4: Retained your beautiful LoadingButton component */}
               <LoadingButton
                 loading={loading}
                 onClick={handlePlaceOrder}

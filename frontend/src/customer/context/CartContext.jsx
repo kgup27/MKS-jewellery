@@ -1,7 +1,8 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom"; // <-- Step 1
-import toast from "react-hot-toast"; // <-- Step 1
-import { useCustomerAuth } from "./CustomerAuthContext"; // <-- Step 1
+import { useNavigate } from "react-router-dom"; 
+import toast from "react-hot-toast"; 
+import { useCustomerAuth } from "./CustomerAuthContext"; 
+import api from "../../services/api"; // <-- Step 1: Backend API import
 
 const CartContext = createContext();
 
@@ -11,11 +12,11 @@ export default function CartProvider({ children }) {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const navigate = useNavigate(); // <-- Step 2
-  const { isAuthenticated } = useCustomerAuth(); // <-- Step 2
+  const navigate = useNavigate(); 
+  const { isAuthenticated } = useCustomerAuth(); 
 
-  // Add To Cart — Authentication check + Variant logic preserved
-  const addToCart = (product) => {
+  // Add To Cart — Step 2: Converted to async function
+  const addToCart = async (product) => {
     // Auth Check
     if (!isAuthenticated) {
       toast.error("Please login to add items to your cart.");
@@ -39,7 +40,7 @@ export default function CartProvider({ children }) {
           item.selectedSize === product.selectedSize
             ? {
                 ...item,
-                quantity: item.quantity + (product.quantity || 1), // Dynamically adds quantity
+                quantity: item.quantity + (product.quantity || 1), 
               }
             : item
         )
@@ -54,10 +55,22 @@ export default function CartProvider({ children }) {
       ]);
     }
 
-    toast.success("Added to cart"); // <-- Success Notification
+    // Step 3: Syncing with Backend before success toast
+    try {
+      await api.post("/api/cart", {
+        product_id: product.id,
+        quantity: product.quantity || 1,
+      });
+      console.log("Cart synced to backend");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to sync cart");
+    }
+
+    toast.success("Added to cart"); 
   };
 
-  // Remove Item — Specific Variant ko cart se drop karega
+  // Remove Item
   const removeFromCart = (id, color, size) => {
     setCart(
       cart.filter(
@@ -100,7 +113,7 @@ export default function CartProvider({ children }) {
     );
   };
 
-  // Clear Cart Helper (If required by your setup)
+  // Clear Cart Helper
   const clearCart = () => {
     setCart([]);
   };
@@ -113,7 +126,7 @@ export default function CartProvider({ children }) {
   return (
     <CartContext.Provider
       value={{
-        cart, // Keeping it 'cart' to avoid breaking existing UI components
+        cart, 
         addToCart,
         removeFromCart,
         increaseQuantity,

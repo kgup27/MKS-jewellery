@@ -512,35 +512,296 @@ app.delete("/api/wishlist/:id", authenticateToken, (req, res) => res.json({ mess
 // ==========================================
 // SHOPPING CART SYSTEM APIs
 // ==========================================
+// ==========================================
+// SHOPPING CART SYSTEM APIs (NEW)
+// ==========================================
+
+// GET CART
 app.get("/api/cart", authenticateToken, async (req, res) => {
-  const items = await pool.query(
-    "SELECT c.id, c.quantity, p.title, p.price, p.image_url, p.id as product_id FROM cart_items c JOIN products p ON c.product_id = p.id WHERE c.user_id = $1",
-    [req.user.id]
-  );
-  res.json(items.rows);
-});
+  try {
+    // Find or create cart
+    let cart = await pool.query(
+      `
+      SELECT id
+      FROM cart
+      WHERE user_id = $1
+      `,
+      [req.user.id]
+    );
 
-app.post("/api/cart", authenticateToken, async (req, res) => {
-  const { product_id, quantity } = req.body;
-  const existing = await pool.query("SELECT id, quantity FROM cart_items WHERE user_id = $1 AND product_id = $2", [req.user.id, product_id]);
-  if (existing.rows.length > 0) {
-    await pool.query("UPDATE cart_items SET quantity = quantity + $1 WHERE id = $2", [quantity || 1, existing.rows[0].id]);
-  } else {
-    await pool.query("INSERT INTO cart_items (user_id, product_id, quantity) VALUES ($1, $2, $3)", [req.user.id, product_id, quantity || 1]);
+    if (cart.rows.length === 0) {
+      cart = await pool.query(
+        `
+        INSERT INTO cart(user_id)
+        VALUES($1)
+        RETURNING id
+        `,
+        [req.user.id]
+      );
+    }
+
+    const cartId = cart.rows[0].id;
+
+    const items = await pool.query(
+      `
+      SELECT
+        ci.id,
+        ci.product_id,
+        ci.quantity,
+        ci.price_at_time,
+        ci.subtotal,
+
+        pc.title,
+        pc.image_url
+
+      FROM cart_items ci
+
+      JOIN product_catalogue pc
+      ON pc.product_id = ci.product_id
+
+      WHERE ci.cart_id = $1
+
+      ORDER BY ci.id DESC
+      `,
+      [cartId]
+    );
+
+    res.json(items.rows);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({
+      error: "Failed to load cart."
+    });
   }
-  res.json({ message: "Cart synced successfully." });
 });
 
-app.put("/api/cart/:id", authenticateToken, async (req, res) => {
-  await pool.query("UPDATE cart_items SET quantity = $1 WHERE id = $2 AND user_id = $3", [req.body.quantity, req.params.id, req.user.id]);
-  res.json({ message: "Item adjusted successfully." });
+
+// ADD TO CART
+app.post("/api/cart", authenticateToken, async (req, res) => {
+
+  try {
+
+    const {
+      product_id,
+      quantity = 1
+    } = req.body;
+
+    // Find/Create cart
+
+    let cart = await pool.query(
+      `
+      SELECT id
+      FROM cart
+      WHERE user_id=$1
+      `,
+      [req.user.id]
+    );
+
+    if(cart.rows.length===0){
+
+      cart=await pool.query(
+        `
+        INSERT INTO cart(user_id)
+        VALUES($1)
+        RETURNING id
+        `,
+        [req.user.id]
+      );
+
+    }
+
+    const cartId=cart.rows[0].id;
+
+    // Product price
+
+    const product=await pool.query(
+      `
+      SELECT
+      discounted_price
+
+      FROM product_catalogue
+
+      WHERE product_id=$1
+      `,
+      [product_id]
+    );
+
+    if(product.rows.length===0){
+      return res.status(404).json({
+        error:"Product not found."
+      });
+    }
+
+    const price=parseFloat(product.rows[0].discounted_price);
+
+    // Already exists?
+
+    const existing=await pool.query(
+      `
+      SELECT *
+      FROM cart_items
+      WHERE cart_id=$1
+      AND product_id=$2
+      `,
+      [cartId,product_id]
+    );
+
+    if(existing.rows.length){
+
+      const qty=existing.rows[0].quantity+quantity;
+
+      await pool.query(
+        `
+        UPDATE cart_items
+
+        SET
+        quantity=$1,
+        subtotal=$2
+
+        WHERE id=$3
+        `,
+        [
+          qty,
+          qty*price,
+          existing.rows[0].id
+        ]
+      );
+
+    }else{
+
+      await pool.query(
+        `
+        INSERT INTO cart_items
+        (
+          cart_id,
+          product_id,
+          quantity,
+          price_at_time,
+          subtotal
+        )
+
+        VALUES
+        (
+          $1,$2,$3,$4,$5
+        )
+        `,
+        [
+          cartId,
+          product_id,
+          quantity,
+          price,
+          quantity*price
+        ]
+      );
+
+    }
+
+    res.json({
+      message:"Added to cart."
+    });
+
+  } catch(err){
+
+    console.error(err);
+
+    res.status(500).json({
+      error:"Failed to add item."
+    });
+
+  }
+
 });
 
-app.delete("/api/cart/:id", authenticateToken, async (req, res) => {
-  await pool.query("DELETE FROM cart_items WHERE id = $1 AND user_id = $2", [req.params.id, req.user.id]);
-  res.json({ message: "Extracted cleanly from active item cluster." });
+
+// UPDATE CART ITEM
+app.put("/api/cart/:id", authenticateToken, async (req,res)=>{
+
+  try{
+
+    const {quantity}=req.body;
+
+    const item=await pool.query(
+      `
+      SELECT *
+      FROM cart_items
+      WHERE id=$1
+      `,
+      [req.params.id]
+    );
+
+    if(item.rows.length===0){
+      return res.status(404).json({
+        error:"Item not found."
+      });
+    }
+
+    const subtotal=
+      quantity*
+      parseFloat(item.rows[0].price_at_time);
+
+    await pool.query(
+      `
+      UPDATE cart_items
+
+      SET
+      quantity=$1,
+      subtotal=$2
+
+      WHERE id=$3
+      `,
+      [
+        quantity,
+        subtotal,
+        req.params.id
+      ]
+    );
+
+    res.json({
+      message:"Cart updated."
+    });
+
+  }catch(err){
+
+    console.error(err);
+
+    res.status(500).json({
+      error:"Update failed."
+    });
+
+  }
+
 });
 
+
+// DELETE CART ITEM
+app.delete("/api/cart/:id", authenticateToken, async (req,res)=>{
+
+  try{
+
+    await pool.query(
+      `
+      DELETE FROM cart_items
+      WHERE id=$1
+      `,
+      [req.params.id]
+    );
+
+    res.json({
+      message:"Removed."
+    });
+
+  }catch(err){
+
+    console.error(err);
+
+    res.status(500).json({
+      error:"Delete failed."
+    });
+
+  }
+
+});
 // ==========================================
 // CHECKOUT & ORDERS ENGINE APIs (UPDATED)
 // ==========================================
@@ -551,56 +812,200 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Fetch cart items joining with product_catalogue to get correct price
-    const cart = await client.query(
-      `SELECT c.*, p.discounted_price 
-       FROM cart_items c 
-       JOIN product_catalogue p ON c.product_id = p.product_id 
-       WHERE c.user_id = $1`,
+    console.log("REQ.USER =>", req.user);
+    console.log("REQ.BODY =>", req.body);
+
+    // Get billing data from frontend
+    const {
+      fullName,
+      phone,
+      address,
+      city,
+      pincode,
+      } = req.body;
+
+    // Save customer address
+    const addressResult = await client.query(
+      `
+      INSERT INTO addresses
+      (
+        user_id,
+        full_name,
+        phone,
+        address_line1,
+        city,
+        state,
+        pincode,
+        country,
+        is_default
+      )
+      VALUES
+      (
+        $1,$2,$3,$4,$5,$6,$7,$8,false
+      )
+      RETURNING address_id
+      `,
+      [
+        req.user.id,
+        fullName,
+        phone,
+        address,
+        city,
+        "Uttarakhand",
+        pincode,
+        "India",
+      ]
+    );
+
+    const addressId = addressResult.rows[0].address_id;
+    console.log("ADDRESS ID:", addressId);
+
+    // Find user's cart
+    let cartResult = await client.query(
+      `
+      SELECT id
+      FROM cart
+      WHERE user_id = $1
+      `,
       [req.user.id]
     );
 
+    // Agar cart nahi hai to automatically create karo
+    if (cartResult.rows.length === 0) {
+      cartResult = await client.query(
+        `
+        INSERT INTO cart (user_id)
+        VALUES ($1)
+        RETURNING id
+        `,
+        [req.user.id]
+      );
+    }
+
+    const cartId = cartResult.rows[0].id;
+    console.log("CART ID:", cartId);
+
+    // Get cart items
+    const cart = await client.query(
+      `
+      SELECT *
+      FROM cart_items
+      WHERE cart_id = $1
+      `,
+      [cartId]
+    );
+    
+    console.log("CART:", cart.rows);
+    console.log("CART LENGTH:", cart.rows.length);
+
     if (cart.rows.length === 0) {
-      return res.status(400).json({ error: "Cart is empty." });
+      return res.status(400).json({
+      error: "Cart is empty",
+      });
     }
 
     // Calculate total using discounted_price
     const total = cart.rows.reduce(
-      (sum, item) => sum + (parseFloat(item.discounted_price) * item.quantity), 
+      (sum, item) => sum + parseFloat(item.subtotal),
       0
     );
 
+    console.log("TOTAL:", total);
+    
     // Insert into orders using order_id and lowercase 'pending'
     const orderResult = await client.query(
-      `INSERT INTO orders (user_id, total_amount, status) 
-       VALUES ($1, $2, 'pending') 
-       RETURNING order_id`,
-      [req.user.id, total]
+      `
+      INSERT INTO orders
+      (
+        user_id,
+        address_id,
+        total_amount,
+        status,
+        payment_status
+      )
+      VALUES
+      (
+        $1,
+        $2,
+        $3,
+        'pending',
+        'pending'
+      )
+      RETURNING order_id
+      `,
+      [
+        req.user.id,
+        addressId,
+        total,
+      ]
     );
     const orderId = orderResult.rows[0].order_id;
+    console.log("ORDER ID:", orderId);
 
     // Insert items using price_at_purchase and discounted_price
-    for (let item of cart.rows) {
+    for (const item of cart.rows) {
       await client.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price_at_purchase) 
-         VALUES ($1, $2, $3, $4)`,
-        [orderId, item.product_id, item.quantity, item.discounted_price]
+        `
+        INSERT INTO order_items
+        (
+          order_id,
+          product_id,
+          quantity,
+          price_at_purchase
+        )
+        VALUES
+        (
+          $1,
+          $2,
+          $3,
+          $4
+        )
+        `,
+        [
+          orderId,
+          item.product_id,
+          item.quantity,
+          item.price_at_time,
+        ]
       );
     }
 
     // Clear the cart
-    await client.query("DELETE FROM cart_items WHERE user_id = $1", [req.user.id]);
-    
+    await client.query(
+      `
+      DELETE FROM cart_items
+      WHERE cart_id = $1
+      `,
+      [cartId]
+    );
+
     await client.query("COMMIT");
-    res.status(201).json({ message: "Order placed!", orderId });
-  } catch (err) {
-    await client.query("ROLLBACK");
-    console.error("Checkout Error:", err);
-    res.status(500).json({ error: "Checkout failed." });
-  } finally {
-    client.release();
-  }
-});
+
+    res.status(201).json({
+      message: "Order placed!",
+      orderId,
+    });
+
+    } catch (err) {
+
+      await client.query("ROLLBACK");
+
+      console.error("========== CHECKOUT ERROR ==========");
+      console.error("MESSAGE:", err.message);
+      console.error("DETAIL:", err.detail);
+      console.error("HINT:", err.hint);
+      console.error("CODE:", err.code);
+      console.error("CONSTRAINT:", err.constraint);
+      console.error("STACK:", err.stack);
+
+      res.status(500).json({
+        error: err.message,
+      });
+
+    } finally {
+      client.release();
+    }
+    });
 
 // 2. GET ALL ORDERS FOR A USER
 app.get("/api/orders", authenticateToken, async (req, res) => {
@@ -629,6 +1034,62 @@ app.get("/api/orders/:id", authenticateToken, async (req, res) => {
     if (order.rows.length === 0) {
       return res.status(404).json({ error: "Order not found." });
     }
+
+// 4. CANCEL ORDER
+app.patch("/api/orders/:id/cancel", authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check order exists and belongs to logged-in user
+    const order = await pool.query(
+      `
+      SELECT *
+      FROM orders
+      WHERE order_id = $1
+      AND user_id = $2
+      `,
+      [id, req.user.id]
+    );
+
+    if (order.rows.length === 0) {
+      return res.status(404).json({
+        error: "Order not found.",
+      });
+    }
+
+    const currentStatus = order.rows[0].status?.toLowerCase();
+
+    // Prevent cancelling delivered/cancelled orders
+    if (
+      currentStatus === "delivered" ||
+      currentStatus === "cancelled"
+    ) {
+      return res.status(400).json({
+        error: "This order cannot be cancelled.",
+      });
+    }
+
+    // Update status
+    await pool.query(
+      `
+      UPDATE orders
+      SET status = 'cancelled'
+      WHERE order_id = $1
+      `,
+      [id]
+    );
+
+    res.json({
+      message: "Order cancelled successfully!",
+    });
+  } catch (err) {
+    console.error("Cancel Order Error:", err);
+
+    res.status(500).json({
+      error: "Failed to cancel order.",
+    });
+  }
+});    
 
     // Fetch items with updated join on product_catalogue including title and image_url
     const items = await pool.query(

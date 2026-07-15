@@ -21,6 +21,7 @@ import Wishlist from "../pages/Wishlist/Wishlist";
 import Checkout from "../pages/Checkout/Checkout";
 import Profile from "../pages/Profile/Profile";
 import MyOrders from "../pages/MyOrders/MyOrders";
+import OrderDetails from "../pages/OrderDetails/OrderDetails"; // 👈 Step 1: Import added
 import SavedAddress from "../pages/SavedAddress/SavedAddress";
 
 function CustomerRoutes() {
@@ -32,10 +33,7 @@ function CustomerRoutes() {
       <Route path="/product/:id" element={<Product />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
-      
-      {/* 👈 Step 2: Route added */}
       <Route path="/forgot-password" element={<ForgotPassword />} /> 
-      
       <Route path="/collections" element={<Collections />} />
       <Route path="/about" element={<About />} />
       <Route path="/contact" element={<Contact />} />
@@ -47,10 +45,15 @@ function CustomerRoutes() {
         <Route path="/wishlist" element={<Wishlist />} />
         <Route path="/checkout" element={<Checkout />} />
         <Route path="/profile" element={<Profile />} />
+        
+        {/* Order Routes */}
         <Route path="/orders" element={<MyOrders />} />
+        <Route path="/orders/:id" element={<OrderDetails />} /> {/* 👈 Step 2: Dynamic Route added */}
+        
         <Route path="/saved-address" element={<SavedAddress />} />
       </Route>
 
+      {/* 404 Route */}
       <Route path="*" element={<NotFound />} />
     </Routes>
   );
