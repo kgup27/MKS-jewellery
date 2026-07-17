@@ -1,7 +1,8 @@
 import UserRow from "../UserRow/UserRow";
-import { usersData } from "../../data/usersData";
 
 function UsersTable({
+  customers,
+  loading,
   onView,
   onEdit,
   onDelete,
@@ -14,7 +15,6 @@ function UsersTable({
         <table className="min-w-full">
 
           <thead className="bg-[#F8F6F2]">
-
             <tr>
 
               <th className="px-6 py-4 text-left text-sm font-semibold">
@@ -50,22 +50,47 @@ function UsersTable({
               </th>
 
             </tr>
-
           </thead>
 
           <tbody>
 
-            {usersData.map((user) => (
+            {loading ? (
 
-              <UserRow
-                key={user.id}
-                user={user}
-                onView={onView}
-                onEdit={onEdit}
-                onDelete={onDelete}
-              />
+              <tr>
+                <td
+                  colSpan="8"
+                  className="px-6 py-10 text-center text-gray-500"
+                >
+                  Loading customers...
+                </td>
+              </tr>
 
-            ))}
+            ) : customers.length === 0 ? (
+
+              <tr>
+                <td
+                  colSpan="8"
+                  className="px-6 py-10 text-center text-gray-500"
+                >
+                  No customers found.
+                </td>
+              </tr>
+
+            ) : (
+
+              customers.map((user) => (
+
+                <UserRow
+                  key={user.id}
+                  user={user}
+                  onView={onView}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                />
+
+              ))
+
+            )}
 
           </tbody>
 

@@ -1306,6 +1306,34 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 
     console.log("REQ.USER =>", req.user);
     console.log("REQ.BODY =>", req.body);
+    
+    // Check customer account status before placing order
+    const userStatusResult = await client.query(
+      `
+      SELECT status
+      FROM users
+      WHERE id = $1
+      `,
+      [req.user.id]
+    );
+
+    if (userStatusResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        error: "User not found.",
+      });
+    }
+
+    const customerStatus =
+      userStatusResult.rows[0].status?.toLowerCase();
+
+    if (customerStatus === "blocked") {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        error:
+          "Your account has been blocked. You cannot place orders. Please contact support.",
+      });
+    }
 
     // Get billing data from frontend
     const { address_id } = req.body;
@@ -2177,6 +2205,189 @@ app.delete("/api/admin/users/:id", authenticateToken, requireAdmin, async (req, 
   await pool.query("DELETE FROM users WHERE id = $1", [req.params.id]);
   res.json({ message: "Target user row deleted." });
 });
+
+// ==========================================
+// Customers APIs
+// ==========================================
+
+app.get(
+  "/api/admin/customers",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          u.id,
+          u.full_name AS name,
+          u.email,
+
+          -- Default/latest address phone
+          a.phone,
+
+          u.profile_image,
+          u.status,
+          u.created_at,
+
+          COUNT(DISTINCT o.order_id)::int AS orders,
+
+          COALESCE(
+            SUM(o.total_amount) FILTER (
+              WHERE LOWER(o.status) != 'cancelled'
+            ),
+            0
+          ) AS "totalSpent"
+
+        FROM users u
+
+        -- Get default/latest address phone
+        LEFT JOIN LATERAL (
+          SELECT phone
+          FROM addresses
+          WHERE user_id = u.id
+          ORDER BY is_default DESC, address_id DESC
+          LIMIT 1
+        ) a ON true
+
+        LEFT JOIN orders o
+          ON o.user_id = u.id
+
+        WHERE u.role = 'customer'
+
+        GROUP BY
+          u.id,
+          u.full_name,
+          u.email,
+          a.phone,
+          u.profile_image,
+          u.status,
+          u.created_at
+
+        ORDER BY u.created_at DESC
+      `);
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Fetch customers error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch customers",
+      });
+    }
+  }
+);
+
+
+// UPDATE CUSTOMER
+app.put(
+  "/api/admin/customers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { name, email, status } = req.body;
+
+      const allowedStatuses = ["Active", "VIP", "Blocked"];
+
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          error: "Invalid customer status",
+        });
+      }
+
+      const result = await pool.query(
+        `UPDATE users
+         SET full_name = $1,
+             email = $2,
+             status = $4
+         WHERE id = $5 AND role = 'customer'
+         RETURNING
+           id,
+           full_name AS name,
+           email,
+           phone,
+           role,
+           status,
+           created_at`,
+        [
+          name,
+          email,
+          status,
+          req.params.id,
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Customer not found",
+        });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update customer error:", err);
+      res.status(500).json({
+        error: "Failed to update customer",
+      });
+    }
+  }
+);
+
+// DELETE CUSTOMER
+app.delete(
+  "/api/admin/customers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const customerId = req.params.id;
+
+      // Check if customer has any orders
+      const orderCheck = await pool.query(
+        `SELECT 1
+         FROM orders
+         WHERE user_id = $1
+         LIMIT 1`,
+        [customerId]
+      );
+
+      // Do not delete customers with order history
+      if (orderCheck.rows.length > 0) {
+        return res.status(409).json({
+          error:
+            "Customer cannot be deleted because order history exists. Block the customer instead.",
+        });
+      }
+
+      // Delete customer if no orders exist
+      const result = await pool.query(
+        `DELETE FROM users
+         WHERE id = $1 AND role = 'customer'
+         RETURNING id`,
+        [customerId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Customer not found",
+        });
+      }
+
+      res.json({
+        message: "Customer deleted successfully",
+      });
+    } catch (err) {
+      console.error("Delete customer error:", err);
+
+      res.status(500).json({
+        error: "Failed to delete customer",
+      });
+    }
+  }
+);
+
+
 
 // Vercel Entry Wrapper Engine Hook
 if (process.env.NODE_ENV !== "production") {

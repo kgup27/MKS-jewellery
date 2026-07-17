@@ -10,6 +10,9 @@ function UserRow({
   onEdit,
   onDelete,
 }) {
+  
+  const status = user.status || "Active";
+
   const getStatusColor = (status) => {
     switch (status) {
       case "Active":
@@ -34,16 +37,23 @@ function UserRow({
 
         <div className="flex items-center gap-4">
 
-          <img
-            src={user.avatar}
-            alt={user.name}
-            className="h-12 w-12 rounded-full object-cover"
-          />
+          {/* Customer Avatar */}
+          {user.avatar || user.profile_image ? (
+            <img
+              src={user.avatar || user.profile_image}
+              alt={user.name || "Customer"}
+              className="h-12 w-12 rounded-full object-cover"
+            />
+          ) : (
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-200 text-sm font-semibold text-gray-600">
+              {user.name?.charAt(0)?.toUpperCase() || "C"}
+            </div>
+          )}
 
           <div>
 
             <h3 className="font-semibold text-gray-900">
-              {user.name}
+              {user.name || "Unknown Customer"}
             </h3>
 
             <p className="text-xs text-gray-500">
@@ -58,22 +68,22 @@ function UserRow({
 
       {/* Email */}
       <td className="px-6 py-4 text-gray-700">
-        {user.email}
+        {user.email || "N/A"}
       </td>
 
       {/* Phone */}
       <td className="px-6 py-4 text-gray-700">
-        {user.phone}
+        {user.phone || "N/A"}
       </td>
 
       {/* Orders */}
       <td className="px-6 py-4 text-center font-semibold">
-        {user.orders}
+        {user.orders || 0}
       </td>
 
       {/* Total Spent */}
       <td className="px-6 py-4 text-right font-semibold">
-        ₹{user.totalSpent.toLocaleString("en-IN")}
+        ₹{Number(user.totalSpent || 0).toLocaleString("en-IN")}
       </td>
 
       {/* Status */}
@@ -81,17 +91,19 @@ function UserRow({
 
         <span
           className={`rounded-full px-3 py-1 text-xs font-semibold ${getStatusColor(
-            user.status
+            status
           )}`}
         >
-          {user.status}
+          {status}
         </span>
 
       </td>
 
       {/* Joined */}
       <td className="px-6 py-4 text-center text-gray-600">
-        {user.joined}
+        {user.created_at
+          ? new Date(user.created_at).toLocaleDateString("en-IN")
+          : user.joined || "N/A"}
       </td>
 
       {/* Actions */}
