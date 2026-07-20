@@ -2387,7 +2387,158 @@ app.delete(
   }
 );
 
+// ==========================================
+// INVENTORY APIs
+// ==========================================
 
+app.get(
+  "/api/admin/inventory",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          p.product_id,
+          p.title,
+          p.image_url,
+          p.brand,
+          p.category_name,
+          p.quantity AS stock,
+
+          COALESCE(
+            SUM(
+              CASE
+                WHEN LOWER(o.status) = 'pending'
+                THEN oi.quantity
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS reserved,
+
+          GREATEST(
+            p.quantity -
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN LOWER(o.status) = 'pending'
+                  THEN oi.quantity
+                  ELSE 0
+                END
+              ),
+              0
+            ),
+            0
+          )::int AS available,
+
+          10 AS reorder_level,
+
+          CASE
+            WHEN p.quantity = 0 THEN 'Out of Stock'
+            WHEN p.quantity <= 10 THEN 'Low Stock'
+            ELSE 'In Stock'
+          END AS status,
+
+          p.created_at
+
+        FROM product_catalogue p
+
+        LEFT JOIN order_items oi
+          ON oi.product_id = p.product_id
+
+        LEFT JOIN orders o
+          ON o.order_id = oi.order_id
+
+        GROUP BY
+          p.product_id,
+          p.title,
+          p.image_url,
+          p.category_name,
+          p.brand,
+          p.quantity,
+          p.created_at
+
+        ORDER BY p.created_at DESC
+      `);
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Inventory fetch error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch inventory",
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/inventory/:productId",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { productId } = req.params;
+      const { action, quantity } = req.body;
+
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({
+          error: "Invalid quantity",
+        });
+      }
+
+      // Current Stock
+      const current = await pool.query(
+        `
+        SELECT quantity
+        FROM products
+        WHERE id = $1
+      `,
+        [productId]
+      );
+
+      if (current.rows.length === 0) {
+        return res.status(404).json({
+          error: "Product not found",
+        });
+      }
+
+      let stock = Number(current.rows[0].quantity);
+
+      if (action === "add") {
+        stock += Number(quantity);
+      } else if (action === "remove") {
+        if (stock < quantity) {
+          return res.status(400).json({
+            error: "Insufficient stock",
+          });
+        }
+
+        stock -= Number(quantity);
+      }
+
+      const updated = await pool.query(
+        `
+        UPDATE products
+        SET quantity=$1
+        WHERE id = $2
+        RETURNING *
+      `,
+        [stock, productId]
+      );
+
+      res.json(updated.rows[0]);
+    } catch (err) {
+      console.error("Inventory update error:", err);
+
+      res.status(500).json({
+        error: "Failed to update inventory",
+      });
+    }
+  }
+);
 
 // Vercel Entry Wrapper Engine Hook
 if (process.env.NODE_ENV !== "production") {
