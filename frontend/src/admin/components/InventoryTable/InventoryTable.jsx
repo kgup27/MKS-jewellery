@@ -24,9 +24,7 @@ function InventoryTable({
               <th className="px-6 py-4 text-left text-sm font-semibold">
                 Product
               </th>
-              <th className="px-6 py-4 text-left text-sm font-semibold">
-                SKU
-              </th>
+              
               <th className="px-6 py-4 text-left text-sm font-semibold">
                 Category
               </th>

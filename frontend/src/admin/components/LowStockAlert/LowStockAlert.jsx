@@ -52,11 +52,7 @@ function LowStockAlert({
             >
               <div className="flex items-center gap-4">
                 <img
-                  src={
-                    item.image_url
-                      ? `http://localhost:3000${item.image_url}`
-                      : "/placeholder-product.png"
-                  }
+                  src={item.image_url || "/no-image.png"}
                   alt={item.title}
                   onError={(e) => {
                     e.target.src = "/placeholder-product.png";

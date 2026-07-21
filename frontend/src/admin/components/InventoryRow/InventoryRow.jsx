@@ -25,7 +25,10 @@ function InventoryRow({
         return "bg-gray-100 text-gray-700";
     }
   };
-
+  
+  console.log(item);
+  console.log("IMAGE URL:", item.image_url);
+  
   return (
     <tr className="border-b transition hover:bg-gray-50">
 
@@ -34,11 +37,11 @@ function InventoryRow({
       <td className="px-6 py-4">
 
         <div className="flex items-center gap-4">
-
+          
           <img
-            src={`http://localhost:3000${item.image_url}`}
+            src={item.image_url || "/no-image.png"}
             alt={item.title}
-            className="h-14 w-14 rounded-xl object-cover"
+            className="h-14 w-14 rounded-xl object-cover border"
           />
 
           <div>
@@ -47,9 +50,6 @@ function InventoryRow({
               {item.title}
             </h3>
 
-            <p className="text-xs text-gray-500">
-              Brand : {item.brand || "N/A"}
-            </p>
 
           </div>
 
@@ -57,11 +57,7 @@ function InventoryRow({
 
       </td>
 
-      {/* SKU */}
-
-      <td className="px-6 py-4 font-medium">
-        -
-      </td>
+      
 
       {/* Category */}
 
