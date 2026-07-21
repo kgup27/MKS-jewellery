@@ -18,8 +18,21 @@ const pool = new Pool({
 });
 
 pool.connect()
-  .then((client) => {
+  .then(async (client) => {
     console.log("✅ Database Connected Successfully!");
+
+    // 👇 Force IST for this session
+    await client.query(`SET TIME ZONE 'Asia/Kolkata'`);
+
+    const tz = await client.query(`
+      SELECT
+        NOW(),
+        CURRENT_TIMESTAMP,
+        CURRENT_SETTING('TIMEZONE') AS timezone
+    `);
+
+    console.log(tz.rows[0]);
+
     client.release();
   })
   .catch((err) => {
@@ -28,6 +41,7 @@ pool.connect()
   });
 
 const JWT_SECRET = "super_secret_jewelry_key_123";
+
 
 // ==========================================
 // MIDDLEWARES
@@ -2481,7 +2495,12 @@ app.put(
   async (req, res) => {
     try {
       const { productId } = req.params;
-      const { action, quantity } = req.body;
+      const {
+        action,
+        quantity,
+        reason,
+        supplierNote,
+      } = req.body;
 
       if (!quantity || quantity <= 0) {
         return res.status(400).json({
@@ -2522,11 +2541,38 @@ app.put(
       const updated = await pool.query(
         `
         UPDATE products
-        SET quantity=$1
+        SET quantity = $1
         WHERE id = $2
         RETURNING *
-      `,
+        `,
         [stock, productId]
+      );
+
+      // Save inventory history
+      await pool.query(
+        `
+        INSERT INTO inventory_logs
+        (
+          product_id,
+          old_stock,
+          new_stock,
+          action,
+          change_reason,
+          supplier_note,
+          changed_by,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `,
+        [
+          productId,
+          Number(current.rows[0].quantity),
+          stock,
+          action === "add" ? "Stock Added" : "Stock Removed",
+          reason || null,
+          supplierNote || null,
+          req.user?.id || null,
+        ]
       );
 
       res.json(updated.rows[0]);
@@ -2539,6 +2585,52 @@ app.put(
     }
   }
 );
+
+
+// ==========================================
+// INVENTORY HISTORY API
+// ==========================================
+
+app.get(
+  "/api/admin/inventory/:productId/history",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { productId } = req.params;
+
+      const result = await pool.query(
+        `
+        SELECT
+          l.log_id,
+          l.old_stock,
+          l.new_stock,
+          l.action,
+          l.change_reason,
+          l.supplier_note,
+          u.full_name AS updated_by,
+          l.created_at
+        FROM inventory_logs l
+        LEFT JOIN users u
+          ON l.changed_by = u.id
+        WHERE l.product_id = $1
+        ORDER BY l.created_at DESC;
+        `,
+        [productId]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Inventory history error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch inventory history",
+      });
+    }
+  }
+);
+
 
 // Vercel Entry Wrapper Engine Hook
 const PORT = process.env.PORT || 3000;

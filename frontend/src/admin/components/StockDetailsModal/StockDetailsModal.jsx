@@ -39,7 +39,7 @@ function StockDetailsModal({
             </h2>
 
             <p className="mt-1 text-sm text-gray-500">
-              SKU : {item.sku}
+              SKU : -
             </p>
 
           </div>
@@ -62,17 +62,17 @@ function StockDetailsModal({
           <div className="rounded-2xl border p-6">
 
             <img
-              src={item.image}
-              alt={item.name}
+              src={`http://localhost:3000${item.image_url}`}
+              alt={item.title}
               className="mx-auto h-60 w-60 rounded-2xl object-cover"
             />
 
             <h3 className="mt-6 text-center text-2xl font-bold">
-              {item.name}
+              {item.title}
             </h3>
 
             <p className="mt-2 text-center text-gray-500">
-              {item.category}
+              {item.category_name}
             </p>
 
             <div className="mt-5 flex justify-center">
@@ -146,7 +146,7 @@ function StockDetailsModal({
                   </p>
 
                   <h4 className="text-xl font-bold">
-                    {item.reorderLevel}
+                    {item.reorder_level}
                   </h4>
 
                 </div>
@@ -172,7 +172,7 @@ function StockDetailsModal({
                   </p>
 
                   <h4 className="font-semibold">
-                    {item.supplier}
+                    {item.brand || "N/A"}
                   </h4>
 
                 </div>
@@ -184,7 +184,7 @@ function StockDetailsModal({
                   </p>
 
                   <h4 className="font-semibold">
-                    {item.lastUpdated}
+                    {new Date(item.created_at).toLocaleDateString()}
                   </h4>
 
                 </div>

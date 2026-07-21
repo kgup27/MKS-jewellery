@@ -27,7 +27,7 @@ function ProductModal({ open, onClose, product = null, fetchProducts }) {
   // 1. Fetch categories from backend API
   const fetchCategories = async () => {
     try {
-      const response = await adminApi.get("/api/categories");
+      const response = await adminApi.get("/api/admin/categories");
       setCategories(response.data);
     } catch (error) {
       console.error("Failed to fetch categories:", error);
@@ -195,8 +195,11 @@ function ProductModal({ open, onClose, product = null, fetchProducts }) {
             >
               <option value="">Select Category</option>
               {categories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
+                <option 
+                  key={cat.category_id} 
+                  value={cat.name}
+                >
+                  {cat.name}
                 </option>
               ))}
             </select>

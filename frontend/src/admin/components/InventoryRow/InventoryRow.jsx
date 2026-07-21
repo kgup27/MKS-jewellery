@@ -36,19 +36,19 @@ function InventoryRow({
         <div className="flex items-center gap-4">
 
           <img
-            src={item.image}
-            alt={item.name}
+            src={`http://localhost:3000${item.image_url}`}
+            alt={item.title}
             className="h-14 w-14 rounded-xl object-cover"
           />
 
           <div>
 
             <h3 className="font-semibold text-gray-900">
-              {item.name}
+              {item.title}
             </h3>
 
             <p className="text-xs text-gray-500">
-              Supplier : {item.supplier}
+              Brand : {item.brand || "N/A"}
             </p>
 
           </div>
@@ -60,13 +60,13 @@ function InventoryRow({
       {/* SKU */}
 
       <td className="px-6 py-4 font-medium">
-        {item.sku}
+        -
       </td>
 
       {/* Category */}
 
       <td className="px-6 py-4">
-        {item.category}
+        {item.category_name}
       </td>
 
       {/* Stock */}
@@ -90,7 +90,7 @@ function InventoryRow({
       {/* Reorder */}
 
       <td className="px-6 py-4 text-center">
-        {item.reorderLevel}
+        {item.reorder_level}
       </td>
 
       {/* Status */}

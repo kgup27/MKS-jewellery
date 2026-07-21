@@ -31,6 +31,7 @@ function Products() {
   // Search & Category States
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
+  const [categories, setCategories] = useState([]);
 
   // 🔹 Step 7.1: Pagination states configured below
   const [currentPage, setCurrentPage] = useState(1);
@@ -38,6 +39,7 @@ function Products() {
 
   useEffect(() => {
     fetchProducts();
+    fetchCategories();
   }, []); 
 
   const fetchProducts = async () => {
@@ -50,6 +52,19 @@ function Products() {
       toast.error(error.response?.data?.error || "Failed to load products");
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const fetchCategories = async () => {
+    try {
+      const response = await adminApi.get("/api/admin/categories");
+      
+      console.log("Categories:", response.data);
+
+      setCategories(response.data);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load categories");
     }
   };
 
@@ -142,12 +157,14 @@ function Products() {
             className="rounded-xl border border-gray-300 px-4 py-3 outline-none focus:border-[#C9A227]"
           >
             <option value="">All Categories</option>
-            <option value="Ring">Ring</option>
-            <option value="Necklace">Necklace</option>
-            <option value="Bracelet">Bracelet</option>
-            <option value="Earrings">Earrings</option>
-            <option value="Pendant">Pendant</option>
-            <option value="Bangles">Bangles</option>
+            {categories.map((cat) => (
+              <option
+                key={cat.category_id}
+                value={cat.name}
+              >
+                {cat.name}
+              </option>
+            ))}
           </select>
 
           <button
