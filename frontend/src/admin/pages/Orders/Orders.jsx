@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-// Removed FaFilter import
+
 import { FaSearch } from "react-icons/fa";
 import toast from "react-hot-toast";
-import api from "../../../services/api";
+import adminApi from "../../../services/adminApi";
 
 import OrdersTable from "../../components/OrdersTable/OrdersTable";
 import Pagination from "../../components/Pagination/Pagination";
@@ -29,7 +29,7 @@ function Orders() {
   const fetchOrders = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/admin/orders");
+      const response = await adminApi.get("/api/admin/orders");
       setOrders(response.data);
     } catch (error) {
       console.error(error);
@@ -41,12 +41,28 @@ function Orders() {
     }
   };
 
-  // Fetch Specific Order Details from API
-  const fetchOrderDetails = async (id) => {
+  // 1. FIXED: Fetch Specific Order Details (Destructuring Backend Payload)
+  const fetchOrderDetails = async (id, targetModal = "details") => {
     try {
-      const response = await api.get(`/api/admin/orders/${id}`);
-      setSelectedOrder(response.data);
+      const response = await adminApi.get(`/api/admin/orders/${id}`);
+      
+      // Destructuring order and items correctly as per backend response
+      const fullyDetailedOrder = {
+        ...response.data,
+        items: response.data.items || [],
+      };
+      console.log(fullyDetailedOrder);
+      setSelectedOrder(fullyDetailedOrder);
+      
+      // Open modal
+    if (targetModal === "invoice") {    
+      setInvoiceOpen(true);
+    } else if (targetModal === "status") {
+      setStatusOpen(true);
+    } else {
       setDetailsOpen(true);
+    }
+
     } catch (error) {
       console.error(error);
       toast.error(
@@ -64,10 +80,10 @@ function Orders() {
     const keyword = search.toLowerCase();
 
     const matchSearch =
-      order.full_name?.toLowerCase().includes(keyword) ||
-      order.email?.toLowerCase().includes(keyword) ||
-      String(order.order_id).includes(keyword);
-
+      order.customer_name?.toLowerCase().includes(keyword) ||
+      order.customer_email?.toLowerCase().includes(keyword) ||
+      String(order.order_id || order.id).includes(keyword);
+      
     const matchStatus =
       statusFilter === "" || order.status === statusFilter;
 
@@ -99,7 +115,7 @@ function Orders() {
 
       {/* Search & Filter */}
       <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        {/* Adjusted to grid-cols-4 since 1 column is freed up */}
+     
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
           
           {/* Search Input */}
@@ -153,11 +169,14 @@ function Orders() {
         orders={paginatedOrders}
         loading={loading}
         onView={(order) => {
-          fetchOrderDetails(order.order_id || order.id);
+          fetchOrderDetails(order.order_id || order.id, "details");
         }}
         onStatus={(order) => {
-          setSelectedOrder(order);
-          setStatusOpen(true);
+          fetchOrderDetails(order.order_id || order.id, "status");
+        }}
+        // Passed action for Invoice Trigger
+        onInvoice={(order) => {
+          fetchOrderDetails(order.order_id || order.id, "invoice");
         }}
       />
 
@@ -190,8 +209,11 @@ function Orders() {
         }}
         onSave={async (updatedOrder) => {
           try {
-            await api.put(
-              `/api/admin/orders/${updatedOrder.order_id || updatedOrder.id}`,
+            const orderId = updatedOrder.order_id || updatedOrder.id;
+            
+            // 2. FIXED: Correct status update endpoint matching backend
+            await adminApi.put(
+              `/api/admin/orders/${orderId}`,
               {
                 status: updatedOrder.status,
               }
@@ -217,6 +239,7 @@ function Orders() {
         order={selectedOrder}
         onClose={() => {
           setInvoiceOpen(false);
+          setSelectedOrder(null);
         }}
       />
     </div>

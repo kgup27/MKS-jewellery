@@ -7,15 +7,35 @@ function UserDetailsModal({
 }) {
   if (!open || !user) return null;
 
+  // Safe fallback values for API data
+  const name = user.name || "N/A";
+  const email = user.email || "N/A";
+  const phone = user.phone || "N/A";
+  const orders = user.orders ?? 0;
+  const totalSpent = Number(user.totalSpent) || 0;
+  const status = user.status || "Active";
+  
+  const joined = user.created_at
+  ? new Date(user.created_at).toLocaleDateString("en-IN")
+  : "N/A";
+  
+  // Create initials if avatar is not available
+  const initials = name
+    .split(" ")
+    .map((word) => word[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   const getStatusColor = (status) => {
-    switch (status) {
-      case "Active":
+    switch (status?.toLowerCase()) {
+      case "active":
         return "bg-green-100 text-green-700";
 
-      case "VIP":
+      case "vip":
         return "bg-purple-100 text-purple-700";
 
-      case "Blocked":
+      case "blocked":
         return "bg-red-100 text-red-700";
 
       default:
@@ -29,11 +49,9 @@ function UserDetailsModal({
       <div className="max-h-[95vh] w-full max-w-5xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
 
         {/* Header */}
-
         <div className="flex items-center justify-between border-b px-8 py-5">
 
           <div>
-
             <h2 className="text-2xl font-bold">
               Customer Details
             </h2>
@@ -41,7 +59,6 @@ function UserDetailsModal({
             <p className="mt-1 text-sm text-gray-500">
               Customer ID : #{user.id}
             </p>
-
           </div>
 
           <button
@@ -54,39 +71,42 @@ function UserDetailsModal({
         </div>
 
         {/* Body */}
-
         <div className="grid gap-8 p-8 lg:grid-cols-3">
 
           {/* Left */}
-
           <div className="rounded-2xl border p-6 text-center">
 
-            <img
-              src={user.avatar}
-              alt={user.name}
-              className="mx-auto h-32 w-32 rounded-full object-cover"
-            />
+            {user.avatar || user.profile_image ? (
+              <img
+                src={user.avatar || user.profile_image}
+                alt={name}
+                className="mx-auto h-32 w-32 rounded-full object-cover"
+              />
+            ) : (
+              
+              <div className="mx-auto flex h-32 w-32 items-center justify-center rounded-full bg-gray-200 text-3xl font-bold text-gray-600">
+                {initials}
+              </div>
+            )}
 
             <h3 className="mt-5 text-2xl font-bold">
-              {user.name}
+              {name}
             </h3>
 
             <span
               className={`mt-4 inline-flex rounded-full px-4 py-2 text-sm font-semibold ${getStatusColor(
-                user.status
+                status
               )}`}
             >
-              {user.status}
+              {status}
             </span>
 
           </div>
 
           {/* Right */}
-
           <div className="space-y-6 lg:col-span-2">
 
-            {/* Personal */}
-
+            {/* Personal Information */}
             <div className="rounded-2xl border p-6">
 
               <h3 className="mb-5 text-xl font-semibold">
@@ -96,51 +116,43 @@ function UserDetailsModal({
               <div className="grid gap-5 md:grid-cols-2">
 
                 <div>
-
                   <p className="text-sm text-gray-500">
                     Full Name
                   </p>
 
                   <h4 className="font-semibold">
-                    {user.name}
+                    {name}
                   </h4>
-
                 </div>
 
                 <div>
-
                   <p className="text-sm text-gray-500">
                     Email
                   </p>
 
                   <h4 className="font-semibold">
-                    {user.email}
+                    {email}
                   </h4>
-
                 </div>
 
                 <div>
-
                   <p className="text-sm text-gray-500">
                     Phone
                   </p>
 
                   <h4 className="font-semibold">
-                    {user.phone}
+                    {phone}
                   </h4>
-
                 </div>
 
                 <div>
-
                   <p className="text-sm text-gray-500">
                     Joined
                   </p>
 
                   <h4 className="font-semibold">
-                    {user.joined}
+                    {joined}
                   </h4>
-
                 </div>
 
               </div>
@@ -148,13 +160,12 @@ function UserDetailsModal({
             </div>
 
             {/* Statistics */}
-
             <div className="grid gap-5 md:grid-cols-3">
 
               <div className="rounded-2xl border bg-gray-50 p-5 text-center">
 
                 <h4 className="text-3xl font-bold text-[#C9A227]">
-                  {user.orders}
+                  {orders}
                 </h4>
 
                 <p className="mt-2 text-sm text-gray-500">
@@ -166,7 +177,7 @@ function UserDetailsModal({
               <div className="rounded-2xl border bg-gray-50 p-5 text-center">
 
                 <h4 className="text-3xl font-bold text-[#C9A227]">
-                  ₹{user.totalSpent.toLocaleString("en-IN")}
+                  ₹{totalSpent.toLocaleString("en-IN")}
                 </h4>
 
                 <p className="mt-2 text-sm text-gray-500">
@@ -178,7 +189,7 @@ function UserDetailsModal({
               <div className="rounded-2xl border bg-gray-50 p-5 text-center">
 
                 <h4 className="text-3xl font-bold text-[#C9A227]">
-                  {user.status}
+                  {status}
                 </h4>
 
                 <p className="mt-2 text-sm text-gray-500">
@@ -194,7 +205,7 @@ function UserDetailsModal({
         </div>
 
         {/* Footer */}
-
+        
         <div className="flex justify-end border-t px-8 py-5">
 
           <button

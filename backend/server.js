@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const { Pool } = require("pg");
+const PDFDocument = require("pdfkit");
 
 const app = express();
 app.use(express.json());
@@ -17,8 +18,21 @@ const pool = new Pool({
 });
 
 pool.connect()
-  .then((client) => {
+  .then(async (client) => {
     console.log("✅ Database Connected Successfully!");
+
+    // 👇 Force IST for this session
+    await client.query(`SET TIME ZONE 'Asia/Kolkata'`);
+
+    const tz = await client.query(`
+      SELECT
+        NOW(),
+        CURRENT_TIMESTAMP,
+        CURRENT_SETTING('TIMEZONE') AS timezone
+    `);
+
+    console.log(tz.rows[0]);
+
     client.release();
   })
   .catch((err) => {
@@ -27,6 +41,7 @@ pool.connect()
   });
 
 const JWT_SECRET = "super_secret_jewelry_key_123";
+
 
 // ==========================================
 // MIDDLEWARES
@@ -155,13 +170,11 @@ app.put("/api/auth/profile", authenticateToken, async (req, res) => {
       `
       UPDATE users
       SET
-      full_name=$1,
-      profile_image=$2
-      WHERE id=$3
+        full_name=$1
+      WHERE id=$2
       `,
       [
         full_name,
-        profile_image,
         req.user.id,
       ]
     );
@@ -414,6 +427,8 @@ app.put("/api/addresses/:id", authenticateToken, async (req, res) => {
     );
 
     if (check.rows.length === 0) {
+      await client.query("ROLLBACK");
+
       return res.status(404).json({
         error: "Address not found.",
       });
@@ -852,18 +867,18 @@ app.get("/api/admin/orders", async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
-        o.order_id,
-        o.user_id,
-        o.total_amount,
-        o.status,
-        o.payment_status,
-        o.created_at,
-        u.full_name,
-        u.email
-      FROM orders o
-      JOIN users u
-        ON o.user_id = u.id
-      ORDER BY o.created_at DESC
+        order_id,
+        user_id,
+        total_amount,
+        status,
+        payment_status,
+        created_at,
+
+        customer_name,
+        customer_email
+
+      FROM orders
+      ORDER BY created_at DESC
     `);
 
     res.json(result.rows);
@@ -922,45 +937,65 @@ app.get("/api/admin/orders/:id", async (req, res) => {
   try {
     const { id } = req.params;
 
-    const result = await pool.query(
+    // Order Details
+    const orderResult = await pool.query(
       `
       SELECT
-        o.order_id,
-        o.total_amount,
-        o.status,
-        o.payment_status,
-        o.created_at,
+        order_id,
+        total_amount,
+        status,
+        payment_status,
+        created_at,
 
-        u.full_name,
-        u.email,
+        customer_name,
+        customer_email,
+        customer_phone,
 
-        a.phone,
-        a.address_line1,
-        a.address_line2,
-        a.city,
-        a.state,
-        a.pincode
+        shipping_address_line1,
+        shipping_address_line2,
+        shipping_city,
+        shipping_state,
+        shipping_pincode,
+        shipping_country
 
-      FROM orders o
-
-      JOIN users u
-      ON o.user_id = u.id
-
-      LEFT JOIN addresses a
-      ON o.address_id = a.address_id
-
-      WHERE o.order_id = $1
+      FROM orders
+      WHERE order_id = $1
       `,
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (orderResult.rows.length === 0) {
       return res.status(404).json({
         error: "Order not found",
       });
     }
 
-    res.json(result.rows[0]);
+    // Order Items
+    const itemsResult = await pool.query(
+      `
+      SELECT
+        oi.order_item_id,
+        oi.product_id,
+        oi.quantity,
+        oi.price_at_purchase,
+
+        p.title,
+        p.image_url
+
+      FROM order_items oi
+
+      JOIN products p
+        ON p.id = oi.product_id
+
+      WHERE oi.order_id = $1
+      `,
+      [id]
+    );
+
+    res.json({
+      ...orderResult.rows[0],
+      items: itemsResult.rows,
+    });
 
   } catch (err) {
     console.error(err);
@@ -969,6 +1004,7 @@ app.get("/api/admin/orders/:id", async (req, res) => {
       error: "Failed to fetch order details",
     });
   }
+
 });
 
 
@@ -1284,51 +1320,58 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 
     console.log("REQ.USER =>", req.user);
     console.log("REQ.BODY =>", req.body);
-
-    // Get billing data from frontend
-    const {
-      fullName,
-      phone,
-      address,
-      city,
-      pincode,
-      } = req.body;
-
-    // Save customer address
-    const addressResult = await client.query(
+    
+    // Check customer account status before placing order
+    const userStatusResult = await client.query(
       `
-      INSERT INTO addresses
-      (
-        user_id,
-        full_name,
-        phone,
-        address_line1,
-        city,
-        state,
-        pincode,
-        country,
-        is_default
-      )
-      VALUES
-      (
-        $1,$2,$3,$4,$5,$6,$7,$8,false
-      )
-      RETURNING address_id
+      SELECT status
+      FROM users
+      WHERE id = $1
       `,
-      [
-        req.user.id,
-        fullName,
-        phone,
-        address,
-        city,
-        "Uttarakhand",
-        pincode,
-        "India",
-      ]
+      [req.user.id]
     );
 
-    const addressId = addressResult.rows[0].address_id;
-    console.log("ADDRESS ID:", addressId);
+    if (userStatusResult.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({
+        error: "User not found.",
+      });
+    }
+
+    const customerStatus =
+      userStatusResult.rows[0].status?.toLowerCase();
+
+    if (customerStatus === "blocked") {
+      await client.query("ROLLBACK");
+      return res.status(403).json({
+        error:
+          "Your account has been blocked. You cannot place orders. Please contact support.",
+      });
+    }
+
+    // Get billing data from frontend
+    const { address_id } = req.body;
+
+    // Save customer address
+    const address = await client.query(
+    `
+    SELECT *
+    FROM addresses
+    WHERE address_id = $1
+    AND user_id = $2
+    `,
+    [address_id, req.user.id]
+    );
+
+    
+    if (address.rows.length === 0) {
+      return res.status(404).json({
+        error: "Address not found."
+      });
+    }
+    
+    const addressData = address.rows[0];
+    const addressId = addressData.address_id;
 
     // Find user's cart
     let cartResult = await client.query(
@@ -1369,6 +1412,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
     console.log("CART LENGTH:", cart.rows.length);
 
     if (cart.rows.length === 0) {
+
       return res.status(400).json({
       error: "Cart is empty",
       });
@@ -1387,26 +1431,63 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       `
       INSERT INTO orders
       (
-        user_id,
-        address_id,
-        total_amount,
-        status,
-        payment_status
+      user_id,
+      address_id,
+
+      customer_name,
+      customer_email,
+      customer_phone,
+
+      shipping_address_line1,
+      shipping_address_line2,
+      shipping_city,
+      shipping_state,
+      shipping_pincode,
+      shipping_country,
+
+      total_amount,
+      status,
+      payment_status
       )
       VALUES
       (
-        $1,
-        $2,
-        $3,
-        'pending',
-        'pending'
+      $1,
+      $2,
+
+      $3,
+      $4,
+      $5,
+
+      $6,
+      $7,
+      $8,
+      $9,
+      $10,
+      $11,
+
+      $12,
+
+      'pending',
+      'pending'
       )
       RETURNING order_id
       `,
       [
-        req.user.id,
-        addressId,
-        total,
+      req.user.id,
+      addressId,
+
+      addressData.full_name,
+      req.user.email,
+      addressData.phone,
+
+      addressData.address_line1,
+      addressData.address_line2,
+      addressData.city,
+      addressData.state,
+      addressData.pincode,
+      addressData.country,
+
+      total,
       ]
     );
     const orderId = orderResult.rows[0].order_id;
@@ -1807,40 +1888,52 @@ app.get("/api/admin/orders", authenticateToken, requireAdmin, async (req, res) =
   try {
     const result = await pool.query(`
       SELECT
-        o.id,
+        o.order_id,
+        o.customer_name,
+        o.customer_email,
+        o.customer_phone,
         o.total_amount,
         o.status,
+        o.payment_status,
         o.created_at,
-        u.full_name,
-        u.email,
+
         COALESCE(
           (
             SELECT p.title
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            WHERE oi.order_id = o.id
+            JOIN product_catalogue p
+            ON oi.product_id = p.product_id
+            WHERE oi.order_id = o.order_id
             LIMIT 1
           ),
           'No Product'
         ) AS product,
+
         COALESCE(
           (
             SELECT p.image_url
             FROM order_items oi
-            JOIN products p ON oi.product_id = p.id
-            WHERE oi.order_id = o.id
+            JOIN product_catalogue p
+            ON oi.product_id = p.product_id
+            WHERE oi.order_id = o.order_id
             LIMIT 1
           ),
           ''
         ) AS image
+
       FROM orders o
-      JOIN users u ON u.id = o.user_id
+
       ORDER BY o.created_at DESC
     `);
+
     res.json(result.rows);
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch orders" });
+
+    res.status(500).json({
+      error: "Failed to fetch orders"
+    });
   }
 });
 
@@ -1848,31 +1941,44 @@ app.get("/api/admin/orders/:id", authenticateToken, requireAdmin, async (req, re
   try {
     const order = await pool.query(
       `
-      SELECT o.*, u.full_name, u.email
-      FROM orders o
-      JOIN users u ON o.user_id=u.id
-      WHERE o.id=$1
+      SELECT *
+      FROM orders
+      WHERE order_id = $1
       `,
       [req.params.id]
     );
 
+    if (order.rows.length === 0) {
+      return res.status(404).json({
+        error: "Order not found",
+      });
+    }
+
     const items = await pool.query(
       `
-      SELECT oi.*, p.title, p.image_url
+      SELECT
+        oi.*,
+        p.title,
+        p.image_url
       FROM order_items oi
-      JOIN products p ON oi.product_id=p.id
-      WHERE oi.order_id=$1
+      JOIN products p
+      ON oi.product_id = p.id
+      WHERE oi.order_id = $1
       `,
       [req.params.id]
     );
 
     res.json({
       order: order.rows[0],
-      items: items.rows
+      items: items.rows,
     });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed to fetch order" });
+
+    res.status(500).json({
+      error: "Failed to fetch order",
+    });
   }
 });
 
@@ -1883,7 +1989,7 @@ app.put("/api/admin/orders/:id/status", authenticateToken, requireAdmin, async (
       `
       UPDATE orders
       SET status=$1
-      WHERE id=$2
+      WHERE order_id=$2
       RETURNING *
       `,
       [status, req.params.id]
@@ -1895,26 +2001,183 @@ app.put("/api/admin/orders/:id/status", authenticateToken, requireAdmin, async (
   }
 });
 
+app.get(
+  "/api/admin/orders/:id/invoice",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const orderResult = await pool.query(
+        `
+        SELECT *
+        FROM orders
+        WHERE order_id = $1
+        `,
+        [req.params.id]
+      );
+
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({
+          error: "Order not found",
+        });
+      }
+
+      const order = orderResult.rows[0];
+
+      const itemsResult = await pool.query(
+        `
+        SELECT
+          oi.quantity,
+          oi.price_at_purchase,
+          p.title
+        FROM order_items oi
+        JOIN products p
+        ON oi.product_id = p.id
+        WHERE oi.order_id = $1
+        `,
+        [req.params.id]
+      );
+
+      const items = itemsResult.rows;
+
+      const doc = new PDFDocument({
+        margin: 40,
+      });
+
+      res.setHeader(
+        "Content-Type",
+        "application/pdf"
+      );
+
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=Invoice-${order.order_id}.pdf`
+      );
+
+      doc.pipe(res);
+
+      doc
+        .fontSize(24)
+        .text("MK Jewellers", {
+          align: "center",
+        });
+
+      doc.moveDown();
+
+      doc
+        .fontSize(18)
+        .text("Invoice");
+
+      doc.moveDown();
+
+      doc.fontSize(12);
+
+      doc.text(`Order ID : ${order.order_id}`);
+      doc.text(
+        `Date : ${new Date(order.created_at).toLocaleDateString()}`
+      );
+
+      doc.moveDown();
+
+      doc.text(`Customer : ${order.customer_name}`);
+      doc.text(`Email : ${order.customer_email}`);
+      doc.text(`Phone : ${order.customer_phone}`);
+
+      doc.moveDown();
+
+      doc.text("Shipping Address");
+
+      doc.text(order.shipping_address_line1);
+
+      if (order.shipping_address_line2) {
+        doc.text(order.shipping_address_line2);
+      }
+
+      doc.text(
+        `${order.shipping_city}, ${order.shipping_state}`
+      );
+
+      doc.text(
+        `${order.shipping_pincode}, ${order.shipping_country}`
+      );
+
+      doc.moveDown();
+
+      doc.fontSize(16).text("Products");
+
+      doc.moveDown(0.5);
+
+      items.forEach((item) => {
+        doc.text(
+          `${item.title}
+Qty : ${item.quantity}
+Price : ₹${item.price_at_purchase}
+
+`
+        );
+      });
+
+      doc.moveDown();
+
+      doc.fontSize(16).text(
+        `Total : ₹${order.total_amount}`,
+        {
+          align: "right",
+        }
+      );
+
+      doc.end();
+    } catch (err) {
+      console.error(err);
+
+      res.status(500).json({
+        error: "Invoice generation failed",
+      });
+    }
+  }
+);
+
 app.get("/api/admin/orders/stats", authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const total = await pool.query("SELECT COUNT(*) FROM orders");
-    const pending = await pool.query("SELECT COUNT(*) FROM orders WHERE status='PENDING'");
-    const processing = await pool.query("SELECT COUNT(*) FROM orders WHERE status='PROCESSING'");
-    const shipped = await pool.query("SELECT COUNT(*) FROM orders WHERE status='SHIPPED'");
-    const delivered = await pool.query("SELECT COUNT(*) FROM orders WHERE status='DELIVERED'");
-    const cancelled = await pool.query("SELECT COUNT(*) FROM orders WHERE status='CANCELLED'");
+    const total = await pool.query(
+      "SELECT COUNT(*) FROM orders"
+    );
+
+    const pending = await pool.query(
+      "SELECT COUNT(*) FROM orders WHERE status='pending'"
+    );
+
+    const processing = await pool.query(
+      "SELECT COUNT(*) FROM orders WHERE status='confirmed'"
+    );
+
+    const shipped = await pool.query(
+      "SELECT COUNT(*) FROM orders WHERE status='shipped'"
+    );
+
+    const delivered = await pool.query(
+      "SELECT COUNT(*) FROM orders WHERE status='delivered'"
+    );
+
+    const cancelled = await pool.query(
+      "SELECT COUNT(*) FROM orders WHERE status='cancelled'"
+    );
 
     res.json({
-      total: total.rows[0].count,
-      pending: pending.rows[0].count,
-      processing: processing.rows[0].count,
-      shipped: shipped.rows[0].count,
-      delivered: delivered.rows[0].count,
-      cancelled: cancelled.rows[0].count
+      total: Number(total.rows[0].count),
+      pending: Number(pending.rows[0].count),
+      processing: Number(processing.rows[0].count),
+      shipped: Number(shipped.rows[0].count),
+      delivered: Number(delivered.rows[0].count),
+      cancelled: Number(cancelled.rows[0].count),
     });
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Failed" });
+
+    res.status(500).json({
+      error: "Failed to fetch order stats",
+    });
   }
 });
 
@@ -1923,16 +2186,27 @@ app.put("/api/admin/orders/:id/cancel", authenticateToken, requireAdmin, async (
     const result = await pool.query(
       `
       UPDATE orders
-      SET status='CANCELLED'
-      WHERE id=$1
+      SET status='cancelled'
+      WHERE order_id=$1
       RETURNING *
       `,
       [req.params.id]
     );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: "Order not found",
+      });
+    }
+
     res.json(result.rows[0]);
+
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Cancel failed" });
+
+    res.status(500).json({
+      error: "Cancel failed",
+    });
   }
 });
 
@@ -1946,8 +2220,423 @@ app.delete("/api/admin/users/:id", authenticateToken, requireAdmin, async (req, 
   res.json({ message: "Target user row deleted." });
 });
 
+// ==========================================
+// Customers APIs
+// ==========================================
+
+app.get(
+  "/api/admin/customers",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          u.id,
+          u.full_name AS name,
+          u.email,
+
+          -- Default/latest address phone
+          a.phone,
+
+          u.profile_image,
+          u.status,
+          u.created_at,
+
+          COUNT(DISTINCT o.order_id)::int AS orders,
+
+          COALESCE(
+            SUM(o.total_amount) FILTER (
+              WHERE LOWER(o.status) != 'cancelled'
+            ),
+            0
+          ) AS "totalSpent"
+
+        FROM users u
+
+        -- Get default/latest address phone
+        LEFT JOIN LATERAL (
+          SELECT phone
+          FROM addresses
+          WHERE user_id = u.id
+          ORDER BY is_default DESC, address_id DESC
+          LIMIT 1
+        ) a ON true
+
+        LEFT JOIN orders o
+          ON o.user_id = u.id
+
+        WHERE u.role = 'customer'
+
+        GROUP BY
+          u.id,
+          u.full_name,
+          u.email,
+          a.phone,
+          u.profile_image,
+          u.status,
+          u.created_at
+
+        ORDER BY u.created_at DESC
+      `);
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Fetch customers error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch customers",
+      });
+    }
+  }
+);
+
+
+// UPDATE CUSTOMER
+app.put(
+  "/api/admin/customers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { name, email, status } = req.body;
+
+      const allowedStatuses = ["Active", "VIP", "Blocked"];
+
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({
+          error: "Invalid customer status",
+        });
+      }
+
+      const result = await pool.query(
+        `UPDATE users
+         SET full_name = $1,
+             email = $2,
+             status = $4
+         WHERE id = $5 AND role = 'customer'
+         RETURNING
+           id,
+           full_name AS name,
+           email,
+           phone,
+           role,
+           status,
+           created_at`,
+        [
+          name,
+          email,
+          status,
+          req.params.id,
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Customer not found",
+        });
+      }
+
+      res.json(result.rows[0]);
+    } catch (err) {
+      console.error("Update customer error:", err);
+      res.status(500).json({
+        error: "Failed to update customer",
+      });
+    }
+  }
+);
+
+// DELETE CUSTOMER
+app.delete(
+  "/api/admin/customers/:id",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const customerId = req.params.id;
+
+      // Check if customer has any orders
+      const orderCheck = await pool.query(
+        `SELECT 1
+         FROM orders
+         WHERE user_id = $1
+         LIMIT 1`,
+        [customerId]
+      );
+
+      // Do not delete customers with order history
+      if (orderCheck.rows.length > 0) {
+        return res.status(409).json({
+          error:
+            "Customer cannot be deleted because order history exists. Block the customer instead.",
+        });
+      }
+
+      // Delete customer if no orders exist
+      const result = await pool.query(
+        `DELETE FROM users
+         WHERE id = $1 AND role = 'customer'
+         RETURNING id`,
+        [customerId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: "Customer not found",
+        });
+      }
+
+      res.json({
+        message: "Customer deleted successfully",
+      });
+    } catch (err) {
+      console.error("Delete customer error:", err);
+
+      res.status(500).json({
+        error: "Failed to delete customer",
+      });
+    }
+  }
+);
+
+// ==========================================
+// INVENTORY APIs
+// ==========================================
+
+app.get(
+  "/api/admin/inventory",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const result = await pool.query(`
+        SELECT
+          p.product_id,
+          p.title,
+          p.image_url,
+          p.brand,
+          p.category_name,
+          p.quantity AS stock,
+
+          COALESCE(
+            SUM(
+              CASE
+                WHEN LOWER(o.status) = 'pending'
+                THEN oi.quantity
+                ELSE 0
+              END
+            ),
+            0
+          )::int AS reserved,
+
+          GREATEST(
+            p.quantity -
+            COALESCE(
+              SUM(
+                CASE
+                  WHEN LOWER(o.status) = 'pending'
+                  THEN oi.quantity
+                  ELSE 0
+                END
+              ),
+              0
+            ),
+            0
+          )::int AS available,
+
+          10 AS reorder_level,
+
+          CASE
+            WHEN p.quantity = 0 THEN 'Out of Stock'
+            WHEN p.quantity <= 10 THEN 'Low Stock'
+            ELSE 'In Stock'
+          END AS status,
+
+          p.created_at
+
+        FROM product_catalogue p
+
+        LEFT JOIN order_items oi
+          ON oi.product_id = p.product_id
+
+        LEFT JOIN orders o
+          ON o.order_id = oi.order_id
+
+        GROUP BY
+          p.product_id,
+          p.title,
+          p.image_url,
+          p.category_name,
+          p.brand,
+          p.quantity,
+          p.created_at
+
+        ORDER BY p.created_at DESC
+      `);
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Inventory fetch error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch inventory",
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/admin/inventory/:productId",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { productId } = req.params;
+      const {
+        action,
+        quantity,
+        reason,
+        supplierNote,
+      } = req.body;
+
+      if (!quantity || quantity <= 0) {
+        return res.status(400).json({
+          error: "Invalid quantity",
+        });
+      }
+
+      // Current Stock
+      const current = await pool.query(
+        `
+        SELECT quantity
+        FROM products
+        WHERE id = $1
+      `,
+        [productId]
+      );
+
+      if (current.rows.length === 0) {
+        return res.status(404).json({
+          error: "Product not found",
+        });
+      }
+
+      let stock = Number(current.rows[0].quantity);
+
+      if (action === "add") {
+        stock += Number(quantity);
+      } else if (action === "remove") {
+        if (stock < quantity) {
+          return res.status(400).json({
+            error: "Insufficient stock",
+          });
+        }
+
+        stock -= Number(quantity);
+      }
+
+      const updated = await pool.query(
+        `
+        UPDATE products
+        SET quantity = $1
+        WHERE id = $2
+        RETURNING *
+        `,
+        [stock, productId]
+      );
+
+      // Save inventory history
+      await pool.query(
+        `
+        INSERT INTO inventory_logs
+        (
+          product_id,
+          old_stock,
+          new_stock,
+          action,
+          change_reason,
+          supplier_note,
+          changed_by,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+        `,
+        [
+          productId,
+          Number(current.rows[0].quantity),
+          stock,
+          action === "add" ? "Stock Added" : "Stock Removed",
+          reason || null,
+          supplierNote || null,
+          req.user?.id || null,
+        ]
+      );
+
+      res.json(updated.rows[0]);
+    } catch (err) {
+      console.error("Inventory update error:", err);
+
+      res.status(500).json({
+        error: "Failed to update inventory",
+      });
+    }
+  }
+);
+
+
+// ==========================================
+// INVENTORY HISTORY API
+// ==========================================
+
+app.get(
+  "/api/admin/inventory/:productId/history",
+  authenticateToken,
+  requireAdmin,
+  async (req, res) => {
+    try {
+      const { productId } = req.params;
+
+      const result = await pool.query(
+        `
+        SELECT
+          l.log_id,
+          l.old_stock,
+          l.new_stock,
+          l.action,
+          l.change_reason,
+          l.supplier_note,
+          u.full_name AS updated_by,
+          l.created_at
+        FROM inventory_logs l
+        LEFT JOIN users u
+          ON l.changed_by = u.id
+        WHERE l.product_id = $1
+        ORDER BY l.created_at DESC;
+        `,
+        [productId]
+      );
+
+      res.json(result.rows);
+
+    } catch (err) {
+      console.error("Inventory history error:", err);
+
+      res.status(500).json({
+        error: "Failed to fetch inventory history",
+      });
+    }
+  }
+);
+
+
 // Vercel Entry Wrapper Engine Hook
-if (process.env.NODE_ENV !== "production") {
-  app.listen(3000, () => console.log("Jewellery Full-Stack Server processing on port 3000"));
-}
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
 module.exports = app;

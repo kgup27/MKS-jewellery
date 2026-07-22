@@ -52,7 +52,7 @@ function UpdateStatusModal({ open, onClose, order, onSave }) {
             <label className="mb-2 block text-sm font-semibold">Customer</label>
             <input
               type="text"
-              value={order.full_name || ""}
+              value={order.customer_name || ""}
               readOnly
               className="w-full rounded-xl border bg-gray-100 px-4 py-3"
             />
@@ -62,7 +62,20 @@ function UpdateStatusModal({ open, onClose, order, onSave }) {
             <label className="mb-2 block text-sm font-semibold">Email</label>
             <input
               type="text"
-              value={order.email || ""}
+              value={order.customer_email || ""}
+              readOnly
+              className="w-full rounded-xl border bg-gray-100 px-4 py-3"
+            />
+          </div>
+
+          <div>
+            <label className="mb-2 block text-sm font-semibold">
+              Phone
+            </label>
+
+            <input
+              type="text"
+              value={order.customer_phone || ""}
               readOnly
               className="w-full rounded-xl border bg-gray-100 px-4 py-3"
             />

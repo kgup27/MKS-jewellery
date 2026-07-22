@@ -64,19 +64,21 @@ function OrderDetailsModal({ open, onClose, order }) {
             {/* Customer Name */}
             <div>
               <p className="text-sm text-gray-500">Customer Name</p>
-              <h4 className="font-semibold">{order.full_name}</h4>
+              <h4 className="font-semibold">{order.customer_name}</h4>
             </div>
 
             {/* Email */}
             <div>
               <p className="text-sm text-gray-500">Email</p>
-              <h4 className="font-semibold">{order.email}</h4>
+              <h4 className="font-semibold">{order.customer_email}</h4>
             </div>
 
             {/* 4. Phone Section */}
             <div>
               <p className="text-sm text-gray-500">Phone</p>
-              <h4 className="font-semibold">{order.phone || "N/A"}</h4>
+              <h4 className="font-semibold">
+                {order.customer_phone || "N/A"}
+              </h4>
             </div>
 
             {/* Total Amount */}
@@ -115,17 +117,19 @@ function OrderDetailsModal({ open, onClose, order }) {
             <div className="md:col-span-2">
               <p className="text-sm text-gray-500">Shipping Address</p>
               <h4 className="font-semibold leading-7">
-                {order.address_line1}
-                {order.address_line2 && (
+                {order.shipping_address_line1}
+                {order.shipping_address_line2 && (
                   <>
                     <br />
-                    {order.address_line2}
+                    {order.shipping_address_line2}
                   </>
                 )}
                 <br />
-                {order.city}, {order.state}
+                {order.shipping_city}, {order.shipping_state}
                 <br />
-                {order.pincode}
+                {order.shipping_pincode}
+                <br />
+                {order.shipping_country}
               </h4>
             </div>
 

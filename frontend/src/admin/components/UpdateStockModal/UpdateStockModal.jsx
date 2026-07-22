@@ -70,7 +70,8 @@ function UpdateStockModal({
             </h2>
 
             <p className="mt-1 text-sm text-gray-500">
-              {item.name}
+              {item.title}
+
             </p>
 
           </div>

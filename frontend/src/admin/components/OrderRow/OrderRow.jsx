@@ -1,4 +1,4 @@
-import { FaEye, FaSyncAlt } from "react-icons/fa";
+import { FaEye, FaSyncAlt, FaFileInvoice } from "react-icons/fa";
 
 // Status Text Mapping
 const formatStatus = (status) => {
@@ -40,6 +40,7 @@ function OrderRow({
   order,
   onView,
   onStatus,
+  onInvoice,
 }) {
   return (
     <tr className="border-b transition hover:bg-gray-50">
@@ -52,11 +53,11 @@ function OrderRow({
       {/* Customer */}
       <td className="px-6 py-4">
         <h3 className="font-semibold text-gray-900">
-          {order.full_name}
+          {order.customer_name}
         </h3>
 
         <p className="text-xs text-gray-500">
-          {order.email}
+          {order.customer_email}
         </p>
       </td>
 
@@ -95,6 +96,14 @@ function OrderRow({
             className="rounded-lg bg-[#FFF8E5] p-2 text-[#C9A227] hover:bg-[#F5E8B2]"
           >
             <FaSyncAlt />
+          </button>
+
+          <button
+            onClick={() => onInvoice(order)}
+            className="rounded-lg bg-green-50 p-2 text-green-600 hover:bg-green-100"
+            title="Invoice"
+          >
+            <FaFileInvoice />
           </button>
 
         </div>

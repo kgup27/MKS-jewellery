@@ -1,37 +1,59 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import LoadingButton from "../../components/LoadingButton/LoadingButton";
 import MainLayout from "../../layouts/MainLayout";
 import { useCart } from "../../context/CartContext";
 import { useCustomerAuth } from "../../context/CustomerAuthContext";
 import toast from "react-hot-toast";
-import api from "../../../services/api"; 
+import api from "../../../services/api";
 
 function Checkout() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const { cart, clearCart } = useCart();
   const { isAuthenticated } = useCustomerAuth();
 
-  const [checkoutData, setCheckoutData] = useState({
-    fullName: "",
-    email: "",
-    phone: "",
-    city: "",
-    address: "",
-    pincode: "",
-    paymentMethod: "cod",
-  });
+  // Address states
+  const [addresses, setAddresses] = useState([]);
+  const [selectedAddress, setSelectedAddress] = useState(null);
+  
+  // Payment method state
+  const [paymentMethod, setPaymentMethod] = useState("cod");
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setCheckoutData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
+  // Fetch addresses on mount
+  useEffect(() => {
+    if (!isAuthenticated) {
+      toast.error("Please login to view checkout.");
+      navigate("/login");
+      return;
+    }
 
-  // ✅ 1. Safe Subtotal Calculation (Handles both price and price_at_time fields)
+    const fetchAddresses = async () => {
+      try {
+        const res = await api.get("/api/addresses");
+        setAddresses(res.data || []);
+
+        // Find default address if available
+        const defaultAddress = res.data?.find((a) => a.is_default);
+        if (defaultAddress) {
+          setSelectedAddress(defaultAddress.address_id);
+        } else if (res.data?.length > 0) {
+          // Fallback to first address if no default is set
+          setSelectedAddress(res.data[0].address_id);
+        }
+      } catch (err) {
+        console.error("Failed to load addresses:", err);
+        toast.error("Failed to load saved addresses.");
+      } finally {
+        setPageLoading(false);
+      }
+    };
+
+    fetchAddresses();
+  }, [isAuthenticated, navigate]);
+
+  // Safe Subtotal Calculation
   const subtotal = cart.reduce(
     (total, item) =>
       total + Number(item.price || item.price_at_time || 0) * (item.quantity || 1),
@@ -50,9 +72,8 @@ function Checkout() {
       return;
     }
 
-    const { fullName, email, phone, city, address, pincode, paymentMethod } = checkoutData;
-    if (!fullName || !email || !phone || !city || !address || !pincode) {
-      toast.error("Please fill out all the billing fields.");
+    if (!selectedAddress) {
+      toast.error("Please select a delivery address.");
       return;
     }
 
@@ -60,12 +81,7 @@ function Checkout() {
 
     try {
       const response = await api.post("/api/orders", {
-        fullName,
-        email,
-        phone,
-        city,
-        address,
-        pincode,
+        address_id: selectedAddress,
         paymentMethod,
       });
 
@@ -75,7 +91,6 @@ function Checkout() {
         clearCart();
       }
       
-      // ✅ Updated to pass orderId in state history
       navigate("/order-success", {
         state: {
           orderId: response.data.orderId,
@@ -83,8 +98,6 @@ function Checkout() {
       });
     } catch (error) {
       console.error("Order processing failed:", error);
-      
-      // ✅ 2. Updated to check for error.response?.data?.error to match backend structure
       toast.error(
         error.response?.data?.error || 
         error.response?.data?.message || 
@@ -95,6 +108,16 @@ function Checkout() {
     }
   };
 
+  if (pageLoading) {
+    return (
+      <MainLayout>
+        <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+          <p className="text-xl font-medium text-gray-600">Loading checkout details...</p>
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
       <section className="min-h-screen bg-[#FAF7F2] py-20">
@@ -103,99 +126,110 @@ function Checkout() {
           <p className="mt-3 text-gray-500">Complete your order securely.</p>
 
           <div className="mt-12 grid gap-10 lg:grid-cols-3">
-            {/* Billing Details */}
-            <div className="lg:col-span-2 rounded-3xl bg-white p-8 shadow">
-              <h2 className="mb-8 text-2xl font-bold">Billing Details</h2>
+            {/* Left Side: Address & Payment */}
+            <div className="lg:col-span-2 space-y-8">
+              
+              {/* Address Selection Block */}
+              <div className="rounded-3xl bg-white p-8 shadow">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold">Choose Delivery Address</h2>
+                  <Link 
+                    to="/saved-address" 
+                    className="text-sm font-semibold text-[#C9A227] hover:underline"
+                  >
+                    + Add New Address
+                  </Link>
+                </div>
 
-              <div className="grid gap-6 md:grid-cols-2">
-                <input
-                  type="text"
-                  name="fullName"
-                  placeholder="Full Name"
-                  value={checkoutData.fullName}
-                  onChange={handleInputChange}
-                  className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-                />
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Email"
-                  value={checkoutData.email}
-                  onChange={handleInputChange}
-                  className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-                />
-                <input
-                  type="tel"
-                  name="phone"
-                  placeholder="Phone Number"
-                  value={checkoutData.phone}
-                  onChange={handleInputChange}
-                  className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-                />
-                <input
-                  type="text"
-                  name="city"
-                  placeholder="City"
-                  value={checkoutData.city}
-                  onChange={handleInputChange}
-                  className="rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-                />
+                {addresses.length === 0 ? (
+                  <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-gray-500 mb-4">No saved addresses found.</p>
+                    <Link
+                      to="/saved-address"
+                      className="inline-block px-6 py-3 bg-black text-white font-semibold rounded-xl hover:bg-[#C9A227] transition"
+                    >
+                      Add Address to Continue
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {addresses.map((address) => (
+                      <div
+                        key={address.address_id}
+                        onClick={() => setSelectedAddress(address.address_id)}
+                        className={`flex gap-4 cursor-pointer rounded-xl border p-5 transition items-start ${
+                          selectedAddress === address.address_id
+                            ? "border-[#C9A227] bg-yellow-50/40"
+                            : "border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="selectedAddress"
+                          checked={selectedAddress === address.address_id}
+                          onChange={() => setSelectedAddress(address.address_id)}
+                          className="mt-1 accent-[#C9A227]"
+                        />
+                        <div className="text-sm text-gray-600 space-y-0.5">
+                          <p className="font-semibold text-gray-900 text-base mb-1">
+                            {address.full_name}
+                          </p>
+                          <p>{address.address_line1}</p>
+                          {address.address_line2 && <p>{address.address_line2}</p>}
+                          <p>
+                            {address.city}, {address.state} - <span className="font-medium text-gray-800">{address.pincode}</span>
+                          </p>
+                          <p className="pt-1 text-xs text-gray-500">Phone: {address.phone}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              <textarea
-                rows="5"
-                name="address"
-                placeholder="Complete Address"
-                value={checkoutData.address}
-                onChange={handleInputChange}
-                className="mt-6 w-full rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-              />
-
-              <input
-                type="text"
-                name="pincode"
-                placeholder="Pincode"
-                value={checkoutData.pincode}
-                onChange={handleInputChange}
-                className="mt-6 w-full rounded-xl border p-4 outline-none focus:border-[#C9A227]"
-              />
-
-              <h3 className="mt-10 text-xl font-bold">Payment Method</h3>
-              <div className="mt-5 space-y-4">
-                <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="paymentMethod" 
-                    value="cod"
-                    checked={checkoutData.paymentMethod === "cod"}
-                    onChange={handleInputChange}
-                  />
-                  Cash on Delivery
-                </label>
-                <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="paymentMethod" 
-                    value="upi"
-                    checked={checkoutData.paymentMethod === "upi"}
-                    onChange={handleInputChange}
-                  />
-                  UPI Payment
-                </label>
-                <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer">
-                  <input 
-                    type="radio" 
-                    name="paymentMethod" 
-                    value="card"
-                    checked={checkoutData.paymentMethod === "card"}
-                    onChange={handleInputChange}
-                  />
-                  Credit / Debit Card
-                </label>
+              {/* Payment Method Block */}
+              <div className="rounded-3xl bg-white p-8 shadow">
+                <h3 className="text-2xl font-bold mb-6">Payment Method</h3>
+                <div className="space-y-4">
+                  <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition hover:bg-gray-50">
+                    <input 
+                      type="radio" 
+                      name="paymentMethod" 
+                      value="cod"
+                      checked={paymentMethod === "cod"}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="accent-[#C9A227]"
+                    />
+                    <span className="font-medium text-gray-800">Cash on Delivery</span>
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition hover:bg-gray-50">
+                    <input 
+                      type="radio" 
+                      name="paymentMethod" 
+                      value="upi"
+                      checked={paymentMethod === "upi"}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="accent-[#C9A227]"
+                    />
+                    <span className="font-medium text-gray-800">UPI Payment</span>
+                  </label>
+                  <label className="flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition hover:bg-gray-50">
+                    <input 
+                      type="radio" 
+                      name="paymentMethod" 
+                      value="card"
+                      checked={paymentMethod === "card"}
+                      onChange={(e) => setPaymentMethod(e.target.value)}
+                      className="accent-[#C9A227]"
+                    />
+                    <span className="font-medium text-gray-800">Credit / Debit Card</span>
+                  </label>
+                </div>
               </div>
+
             </div>
 
-            {/* Order Summary */}
+            {/* Right Side: Order Summary */}
             <div className="h-fit rounded-3xl bg-white p-8 shadow">
               <h2 className="text-2xl font-bold">Order Summary</h2>
 
@@ -213,8 +247,7 @@ function Checkout() {
                       )}
                       <p className="text-xs text-gray-500 mt-1">Qty: {item.quantity || 1}</p>
                     </div>
-                    {/* Safe fallback for line item display as well */}
-                    <span className="font-medium">
+                    <span className="font-medium text-gray-800">
                       ₹{Number(item.price || item.price_at_time || 0) * (item.quantity || 1)}
                     </span>
                   </div>
@@ -246,8 +279,9 @@ function Checkout() {
 
               <LoadingButton
                 loading={loading}
+                disabled={addresses.length === 0}
                 onClick={handlePlaceOrder}
-                className="mt-8 w-full rounded-xl bg-black py-4 font-semibold text-white transition hover:bg-[#C9A227]"
+                className="mt-8 w-full rounded-xl bg-black py-4 font-semibold text-white transition hover:bg-[#C9A227] disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 Place Order
               </LoadingButton>
