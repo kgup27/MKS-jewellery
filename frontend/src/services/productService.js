@@ -3,7 +3,7 @@ import axiosInstance from "./axiosInstance";
 const productService = {
   // Get All Products
   getAllProducts: async (params = {}) => {
-    const response = await axiosInstance.get("/products", {
+    const response = await axiosInstance.get("/api/products", {
       params,
     });
 

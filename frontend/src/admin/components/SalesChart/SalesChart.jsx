@@ -8,31 +8,28 @@ import {
   Tooltip,
 } from "recharts";
 
-const salesData = [
-  { month: "Jan", sales: 42000 },
-  { month: "Feb", sales: 52000 },
-  { month: "Mar", sales: 61000 },
-  { month: "Apr", sales: 58000 },
-  { month: "May", sales: 72000 },
-  { month: "Jun", sales: 85000 },
-  { month: "Jul", sales: 94000 },
-  { month: "Aug", sales: 105000 },
-  { month: "Sep", sales: 98000 },
-  { month: "Oct", sales: 112000 },
-  { month: "Nov", sales: 121000 },
-  { month: "Dec", sales: 135000 },
+const MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
-function SalesChart() {
+function SalesChart({ data = [] }) {
+  const salesData = MONTH_NAMES.map((month, index) => {
+    const item = data.find((d) => Number(d.month) === index + 1);
+
+    return {
+      month,
+      sales: item ? Number(item.revenue) : 0,
+    };
+  });
+
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold text-gray-900">
             Sales Overview
           </h2>
-
           <p className="mt-1 text-sm text-gray-500">
             Monthly Revenue Performance
           </p>
@@ -44,10 +41,8 @@ function SalesChart() {
       </div>
 
       <div className="h-[340px]">
-
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={salesData}>
-
             <defs>
               <linearGradient id="salesColor" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#C9A227" stopOpacity={0.8}/>
@@ -75,12 +70,9 @@ function SalesChart() {
               strokeWidth={3}
               fill="url(#salesColor)"
             />
-
           </AreaChart>
         </ResponsiveContainer>
-
       </div>
-
     </div>
   );
 }

@@ -1,112 +1,83 @@
+import { Link } from "react-router-dom";
 import {
   FaTriangleExclamation,
   FaBoxOpen,
 } from "react-icons/fa6";
 
-const lowStockProducts = [
-  {
-    id: 1,
-    name: "Diamond Ring",
-    sku: "MK-DR-101",
-    stock: 3,
-  },
-  {
-    id: 2,
-    name: "Gold Necklace",
-    sku: "MK-GN-202",
-    stock: 5,
-  },
-  {
-    id: 3,
-    name: "Silver Bracelet",
-    sku: "MK-SB-303",
-    stock: 2,
-  },
-  {
-    id: 4,
-    name: "Pearl Earrings",
-    sku: "MK-PE-404",
-    stock: 1,
-  },
-];
-
-function LowStock() {
+function LowStock({
+  products = [],
+  viewAllPath = "/admin/inventory",
+}) {
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-
       {/* Header */}
       <div className="mb-6 flex items-center justify-between">
-
         <div>
           <h2 className="text-xl font-semibold text-gray-900">
             Low Stock Products
           </h2>
-
           <p className="text-sm text-gray-500">
             Products that need restocking
           </p>
         </div>
 
-        <FaTriangleExclamation
-          size={24}
-          className="text-red-500"
-        />
+        <div className="flex items-center gap-3">
+          <FaTriangleExclamation
+            size={22}
+            className="text-red-500"
+          />
 
-      </div>
-
-      {/* Product List */}
-      <div className="space-y-4">
-
-        {lowStockProducts.map((product) => (
-
-          <div
-            key={product.id}
-            className="flex items-center justify-between rounded-xl border border-gray-100 p-4 transition hover:bg-red-50"
+          <Link
+            to={viewAllPath}
+            className="rounded-lg border border-[#C9A227] px-4 py-2 text-sm font-medium text-[#C9A227] transition hover:bg-[#C9A227] hover:text-white"
           >
-
-            <div className="flex items-center gap-4">
-
-              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
-
-                <FaBoxOpen
-                  className="text-red-600"
-                  size={20}
-                />
-
-              </div>
-
-              <div>
-
-                <h3 className="font-semibold">
-                  {product.name}
-                </h3>
-
-                <p className="text-sm text-gray-500">
-                  {product.sku}
-                </p>
-
-              </div>
-
-            </div>
-
-            <div className="text-right">
-
-              <p className="text-lg font-bold text-red-600">
-                {product.stock}
-              </p>
-
-              <p className="text-xs text-gray-500">
-                Items Left
-              </p>
-
-            </div>
-
-          </div>
-
-        ))}
-
+            View All
+          </Link>
+        </div>
       </div>
 
+      {/* Product List / Empty State */}
+      <div className="space-y-4">
+        {products.length === 0 ? (
+          <div className="py-8 text-center text-gray-500">
+            No low stock products.
+          </div>
+        ) : (
+          products.map((product) => (
+            <div
+              key={product.id}
+              className="flex items-center justify-between rounded-xl border border-gray-100 p-4 transition hover:bg-red-50"
+            >
+              <div className="flex items-center gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
+                  <FaBoxOpen
+                    className="text-red-600"
+                    size={20}
+                  />
+                </div>
+
+                <div>
+                  <h3 className="font-semibold">
+                    {product.title || "Unnamed Product"}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Product #{product.id}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <p className="text-lg font-bold text-red-600">
+                  {product.quantity ?? 0}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Items Left
+                </p>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
     </div>
   );
 }

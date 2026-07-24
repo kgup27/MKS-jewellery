@@ -689,18 +689,22 @@ app.get("/api/products/:id", async (req, res) => {
 app.get("/api/categories", async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT DISTINCT category
-      FROM products
-      WHERE is_active=true
-      ORDER BY category
+      SELECT
+        category_id,
+        name,
+        description,
+        image_url
+      FROM categories
+      ORDER BY name
     `);
 
-    res.json(result.rows.map(r => r.category));
+    res.json(result.rows);
 
   } catch (err) {
     console.error(err);
+
     res.status(500).json({
-      error: "Failed"
+      error: "Failed to fetch categories",
     });
   }
 });
@@ -1320,8 +1324,8 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
 
     console.log("REQ.USER =>", req.user);
     console.log("REQ.BODY =>", req.body);
-    
-    // Check customer account status before placing order
+
+    // 1. Check customer account status before placing order
     const userStatusResult = await client.query(
       `
       SELECT status
@@ -1338,8 +1342,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       });
     }
 
-    const customerStatus =
-      userStatusResult.rows[0].status?.toLowerCase();
+    const customerStatus = userStatusResult.rows[0].status?.toLowerCase();
 
     if (customerStatus === "blocked") {
       await client.query("ROLLBACK");
@@ -1349,31 +1352,32 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       });
     }
 
-    // Get billing data from frontend
+    // 2. Fetch billing address from DB
     const { address_id } = req.body;
 
-    // Save customer address
+
     const address = await client.query(
-    `
-    SELECT *
-    FROM addresses
-    WHERE address_id = $1
-    AND user_id = $2
-    `,
-    [address_id, req.user.id]
+      `
+      SELECT *
+      FROM addresses
+      WHERE address_id = $1
+      AND user_id = $2
+      `,
+      [address_id, req.user.id]
     );
 
-    
     if (address.rows.length === 0) {
+      // ⚠️ FIX: Added missing ROLLBACK here
+      await client.query("ROLLBACK"); 
       return res.status(404).json({
-        error: "Address not found."
+        error: "Address not found.",
       });
     }
-    
+
     const addressData = address.rows[0];
     const addressId = addressData.address_id;
 
-    // Find user's cart
+    // 3. Find or auto-create user's cart
     let cartResult = await client.query(
       `
       SELECT id
@@ -1383,7 +1387,6 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       [req.user.id]
     );
 
-    // Agar cart nahi hai to automatically create karo
     if (cartResult.rows.length === 0) {
       cartResult = await client.query(
         `
@@ -1398,7 +1401,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
     const cartId = cartResult.rows[0].id;
     console.log("CART ID:", cartId);
 
-    // Get cart items
+    // 4. Fetch cart items
     const cart = await client.query(
       `
       SELECT *
@@ -1407,93 +1410,72 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       `,
       [cartId]
     );
-    
+
     console.log("CART:", cart.rows);
     console.log("CART LENGTH:", cart.rows.length);
 
     if (cart.rows.length === 0) {
-
+      // ⚠️ FIX: Added missing ROLLBACK here
+      await client.query("ROLLBACK");
       return res.status(400).json({
-      error: "Cart is empty",
+        error: "Cart is empty",
       });
     }
 
-    // Calculate total using discounted_price
+    // 5. Calculate order total
     const total = cart.rows.reduce(
       (sum, item) => sum + parseFloat(item.subtotal),
       0
     );
 
     console.log("TOTAL:", total);
-    
-    // Insert into orders using order_id and lowercase 'pending'
+
+    // 6. Insert new order record
     const orderResult = await client.query(
       `
       INSERT INTO orders
       (
-      user_id,
-      address_id,
-
-      customer_name,
-      customer_email,
-      customer_phone,
-
-      shipping_address_line1,
-      shipping_address_line2,
-      shipping_city,
-      shipping_state,
-      shipping_pincode,
-      shipping_country,
-
-      total_amount,
-      status,
-      payment_status
+        user_id,
+        address_id,
+        customer_name,
+        customer_email,
+        customer_phone,
+        shipping_address_line1,
+        shipping_address_line2,
+        shipping_city,
+        shipping_state,
+        shipping_pincode,
+        shipping_country,
+        total_amount,
+        status,
+        payment_status
       )
       VALUES
       (
-      $1,
-      $2,
-
-      $3,
-      $4,
-      $5,
-
-      $6,
-      $7,
-      $8,
-      $9,
-      $10,
-      $11,
-
-      $12,
-
-      'pending',
-      'pending'
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending', 'pending'
       )
       RETURNING order_id
       `,
       [
-      req.user.id,
-      addressId,
-
-      addressData.full_name,
-      req.user.email,
-      addressData.phone,
-
-      addressData.address_line1,
-      addressData.address_line2,
-      addressData.city,
-      addressData.state,
-      addressData.pincode,
-      addressData.country,
-
-      total,
+        req.user.id,
+        addressId,
+        addressData.full_name,
+        req.user.email,
+        addressData.phone,
+        addressData.address_line1,
+        addressData.address_line2,
+        addressData.city,
+        addressData.state,
+        addressData.pincode,
+        addressData.country,
+        total,
       ]
     );
+
     const orderId = orderResult.rows[0].order_id;
     console.log("ORDER ID:", orderId);
 
-    // Insert items using price_at_purchase and discounted_price
+    // 7. Insert individual items into order_items
     for (const item of cart.rows) {
       await client.query(
         `
@@ -1506,10 +1488,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
         )
         VALUES
         (
-          $1,
-          $2,
-          $3,
-          $4
+          $1, $2, $3, $4
         )
         `,
         [
@@ -1521,7 +1500,7 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       );
     }
 
-    // Clear the cart
+    // 8. Clear cart items
     await client.query(
       `
       DELETE FROM cart_items
@@ -1530,33 +1509,60 @@ app.post("/api/orders", authenticateToken, async (req, res) => {
       [cartId]
     );
 
+    // 9. ✅ Log activity into activity_logs table
+    await client.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES
+      (
+        $1, $2, $3, $4, $5, $6
+      )
+      `,
+      [
+        "order",
+        "New Order Received",
+        `Order #${orderId} placed successfully.`,
+        orderId,
+        "order",
+        req.user.id,
+      ]
+    );
+
+    // 10. Commit transaction
     await client.query("COMMIT");
 
     res.status(201).json({
       message: "Order placed!",
       orderId,
     });
+  } catch (err) {
+    // Rollback any active transaction on unexpected errors
+    await client.query("ROLLBACK");
 
-    } catch (err) {
+    console.error("========== CHECKOUT ERROR ==========");
+    console.error("MESSAGE:", err.message);
+    console.error("DETAIL:", err.detail);
+    console.error("HINT:", err.hint);
+    console.error("CODE:", err.code);
+    console.error("CONSTRAINT:", err.constraint);
+    console.error("STACK:", err.stack);
 
-      await client.query("ROLLBACK");
-
-      console.error("========== CHECKOUT ERROR ==========");
-      console.error("MESSAGE:", err.message);
-      console.error("DETAIL:", err.detail);
-      console.error("HINT:", err.hint);
-      console.error("CODE:", err.code);
-      console.error("CONSTRAINT:", err.constraint);
-      console.error("STACK:", err.stack);
-
-      res.status(500).json({
-        error: err.message,
-      });
-
-    } finally {
-      client.release();
-    }
+    res.status(500).json({
+      error: err.message,
     });
+  } finally {
+    // Release connection back to pool
+    client.release();
+  }
+});
 
 // 2. GET ALL ORDERS FOR A USER
 app.get("/api/orders", authenticateToken, async (req, res) => {
@@ -1576,7 +1582,7 @@ app.get("/api/orders", authenticateToken, async (req, res) => {
 // 3. GET ORDER DETAILS BY ID
 app.get("/api/orders/:id", authenticateToken, async (req, res) => {
   try {
-    // orders table me primary key ab order_id hai
+    // 1. Fetch the main order details
     const order = await pool.query(
       "SELECT * FROM orders WHERE order_id = $1 AND user_id = $2", 
       [req.params.id, req.user.id]
@@ -1586,12 +1592,42 @@ app.get("/api/orders/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ error: "Order not found." });
     }
 
+    // 2. Fetch all items inside this order along with product details
+    const items = await pool.query(
+      `
+      SELECT
+        oi.*,
+        p.title,
+        p.image_url
+      FROM order_items oi
+      JOIN product_catalogue p
+        ON oi.product_id = p.product_id
+      WHERE oi.order_id = $1
+      `,
+      [req.params.id]
+    );
+
+    // 3. Return the combined response
+    return res.json({
+      order: order.rows[0],
+      items: items.rows,
+    });
+
+  } catch (err) {
+    console.error("Fetch Order Details Error:", err);
+    return res.status(500).json({
+      error: "Failed to fetch order details.",
+    });
+  }
+}); // <--- Route cleanly closed here!
+
+
 // 4. CANCEL ORDER
 app.patch("/api/orders/:id/cancel", authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
 
-    // Check order exists and belongs to logged-in user
+    // 1. Check order exists and belongs to logged-in user
     const order = await pool.query(
       `
       SELECT *
@@ -1610,7 +1646,7 @@ app.patch("/api/orders/:id/cancel", authenticateToken, async (req, res) => {
 
     const currentStatus = order.rows[0].status?.toLowerCase();
 
-    // Prevent cancelling delivered/cancelled orders
+    // 2. Prevent cancelling delivered or already cancelled orders
     if (
       currentStatus === "delivered" ||
       currentStatus === "cancelled"
@@ -1620,7 +1656,7 @@ app.patch("/api/orders/:id/cancel", authenticateToken, async (req, res) => {
       });
     }
 
-    // Update status
+    // 3. Update order status
     await pool.query(
       `
       UPDATE orders
@@ -1630,31 +1666,42 @@ app.patch("/api/orders/:id/cancel", authenticateToken, async (req, res) => {
       [id]
     );
 
-    res.json({
+    // 4. Record activity log
+    await pool.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES
+      (
+        $1, $2, $3, $4, $5, $6
+      )
+      `,
+      [
+        "order",
+        "Order Cancelled",
+        `Order #${id} cancelled by customer.`,
+        id,
+        "order",
+        req.user.id,
+      ]
+    );
+
+    return res.json({
       message: "Order cancelled successfully!",
     });
   } catch (err) {
     console.error("Cancel Order Error:", err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Failed to cancel order.",
     });
-  }
-});    
-
-    // Fetch items with updated join on product_catalogue including title and image_url
-    const items = await pool.query(
-      `SELECT oi.*, p.title, p.image_url 
-       FROM order_items oi 
-       JOIN product_catalogue p ON oi.product_id = p.product_id 
-       WHERE oi.order_id = $1`, 
-      [req.params.id]
-    );
-
-    res.json({ order: order.rows[0], items: items.rows });
-  } catch (err) {
-    console.error("Fetch Order Details Error:", err);
-    res.status(500).json({ error: "Failed to fetch order details." });
   }
 });
 
@@ -1706,12 +1753,160 @@ app.post("/api/admin/login", async (req, res) => {
     admin: { id: admin.id, email: admin.email, full_name: admin.full_name }
   });
 });
-
+// ==========================
+// DASHBOARD DATA API
+// ==========================
 app.get("/api/admin/dashboard", authenticateToken, requireAdmin, async (req, res) => {
-  const usersCount = await pool.query("SELECT COUNT(*) FROM users");
-  const productsCount = await pool.query("SELECT COUNT(*) FROM products");
-  const ordersCount = await pool.query("SELECT COUNT(*) FROM orders");
-  res.json({ users: usersCount.rows[0].count, products: productsCount.rows[0].count, orders: ordersCount.rows[0].count });
+  try {
+    // ==========================
+    // DASHBOARD STATS
+    // ==========================
+
+    const revenueResult = await pool.query(`
+      SELECT
+        COALESCE(SUM(total_amount), 0) AS revenue
+      FROM orders
+      WHERE LOWER(status) = 'delivered'
+    `);
+
+    const ordersResult = await pool.query(`
+      SELECT COUNT(*) AS total_orders
+      FROM orders
+    `);
+
+    const customersResult = await pool.query(`
+      SELECT COUNT(*) AS total_customers
+      FROM users
+      WHERE LOWER(role) = 'customer'
+    `);
+
+    const productsResult = await pool.query(`
+      SELECT COUNT(*) AS total_products
+      FROM products
+      WHERE is_active = true
+    `);
+
+    // ==========================
+    // RECENT ORDERS
+    // ==========================
+
+    const recentOrdersResult = await pool.query(`
+      SELECT
+        o.order_id,
+        o.customer_name,
+        MIN(p.title) AS product_name,
+        o.total_amount,
+        o.status,
+        o.created_at
+      FROM orders o
+      LEFT JOIN order_items oi
+        ON oi.order_id = o.order_id
+      LEFT JOIN products p
+        ON p.id = oi.product_id
+      GROUP BY
+        o.order_id,
+        o.customer_name,
+        o.total_amount,
+        o.status,
+        o.created_at
+      ORDER BY o.created_at DESC
+      LIMIT 5
+    `);
+
+    // ==========================
+    // TOP SELLING PRODUCTS
+    // ==========================
+
+    const topProductsResult = await pool.query(`
+      SELECT
+        p.id,
+        p.title,
+        p.category,
+        SUM(oi.quantity)::INT AS total_sales
+      FROM order_items oi
+      JOIN products p
+        ON p.id = oi.product_id
+      GROUP BY
+        p.id,
+        p.title,
+        p.category
+      ORDER BY total_sales DESC
+      LIMIT 5
+    `);
+
+    // ==========================
+    // LOW STOCK PRODUCTS
+    // ==========================
+
+    const lowStockResult = await pool.query(`
+      SELECT
+        id,
+        title,
+        quantity
+      FROM products
+      WHERE quantity <= 10
+      ORDER BY quantity ASC
+      LIMIT 5
+    `);
+
+    // ==========================
+    // SALES OVERVIEW
+    // ==========================
+
+    const salesOverviewResult = await pool.query(`
+      SELECT
+        EXTRACT(MONTH FROM created_at)::INT AS month,
+        COALESCE(SUM(total_amount), 0) AS revenue
+      FROM orders
+      WHERE LOWER(status) = 'delivered'
+      GROUP BY month
+      ORDER BY month
+    `);
+
+    // ==========================
+    // RECENT ACTIVITY
+    // ==========================
+    const activityResult = await pool.query(`
+      SELECT
+        id,
+        activity_type,
+        title,
+        description,
+        created_at
+      FROM activity_logs
+      ORDER BY created_at DESC
+      LIMIT 5
+    `);
+    // ==========================
+    // RESPONSE
+    // ==========================
+
+    res.json({
+      stats: {
+        revenue: Number(revenueResult.rows[0].revenue),
+        orders: Number(ordersResult.rows[0].total_orders),
+        customers: Number(customersResult.rows[0].total_customers),
+        products: Number(productsResult.rows[0].total_products),
+      },
+
+      recentOrders: recentOrdersResult.rows,
+
+      topProducts: topProductsResult.rows,
+
+      lowStock: lowStockResult.rows,
+
+      salesOverview: salesOverviewResult.rows,
+
+      recentActivity: activityResult.rows,
+    });
+
+  } catch (err) {
+    console.error("Dashboard API Error:", err);
+
+    res.status(500).json({
+      error: "Failed to load dashboard data.",
+    });
+  }
 });
 
 app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res) => {
@@ -1727,9 +1922,10 @@ app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res
       color,
       image_url,
       category,
-      is_active
+      is_active,
     } = req.body;
 
+    // Add Product
     const result = await pool.query(
       `
       INSERT INTO products
@@ -1763,19 +1959,46 @@ app.post("/api/admin/products", authenticateToken, requireAdmin, async (req, res
         color,
         image_url,
         category,
-        is_active ?? true
+        is_active ?? true,
+      ]
+    );
+
+    const product = result.rows[0];
+
+    // Activity Log
+    await pool.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [
+        "product",
+        "Product Added",
+        `${product.title} added.`,
+        product.id,
+        "product",
+        req.user?.id || null,
       ]
     );
 
     res.status(201).json({
       message: "Product added successfully",
-      product: result.rows[0]
+      product,
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Add Product Error:", err);
+
     res.status(500).json({
-      error: "Failed to add product"
+      error: "Failed to add product",
     });
   }
 });
@@ -1836,10 +2059,35 @@ app.put("/api/admin/products/:id", authenticateToken, requireAdmin, async (req, 
         error: "Product not found"
       });
     }
+    
+    const product = result.rows[0];
+
+    await pool.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [
+        "product",
+        "Product Updated",
+        `${product.title} updated.`,
+        product.id,
+        "product",
+        req.user?.id || null,
+      ]
+    );
 
     res.json({
       message: "Product updated successfully",
-      product: result.rows[0]
+      product,
     });
 
   } catch (err) {
@@ -1867,19 +2115,46 @@ app.delete("/api/admin/products/:id", authenticateToken, requireAdmin, async (re
 
     if (result.rows.length === 0) {
       return res.status(404).json({
-        error: "Product not found"
+        error: "Product not found",
       });
     }
 
+    const product = result.rows[0];
+
+    // ✅ Activity Log
+    await pool.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES ($1,$2,$3,$4,$5,$6)
+      `,
+      [
+        "product",
+        "Product Deleted",
+        `${product.title} deleted.`,
+        product.id,
+        "product",
+        req.user?.id || null,
+      ]
+    );
+
     res.json({
       message: "Product deleted successfully",
-      product: result.rows[0]
+      product,
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("Delete Product Error:", err);
+
     res.status(500).json({
-      error: "Failed to delete product"
+      error: "Failed to delete product",
     });
   }
 });
@@ -1985,6 +2260,13 @@ app.get("/api/admin/orders/:id", authenticateToken, requireAdmin, async (req, re
 app.put("/api/admin/orders/:id/status", authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { status } = req.body;
+
+    // Basic Validation
+    if (!status) {
+      return res.status(400).json({ error: "Status is required" });
+    }
+
+    // 1. Order Status Update
     const updated = await pool.query(
       `
       UPDATE orders
@@ -1994,7 +2276,49 @@ app.put("/api/admin/orders/:id/status", authenticateToken, requireAdmin, async (
       `,
       [status, req.params.id]
     );
-    res.json(updated.rows[0]);
+
+    // 2. Check if Order exists
+    if (updated.rows.length === 0) {
+      return res.status(404).json({
+        error: "Order not found",
+      });
+    }
+
+    const order = updated.rows[0];
+
+    // 3. Status Title Formatting (Handles snake_case like "out_for_delivery" -> "Out For Delivery")
+    const statusTitle = status
+      .toLowerCase()
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
+
+    // 4. Log Activity
+    await pool.query(
+      `
+      INSERT INTO activity_logs
+      (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        "order",
+        `Order ${statusTitle}`,
+        `Order #${order.order_id} marked as ${statusTitle.toLowerCase()}.`,
+        order.order_id,
+        "order",
+        req.user?.id || null, // Optional chaining retained to prevent crashing if user object is missing
+      ]
+    );
+
+    // 5. Send Response
+    res.json(order);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to update status" });
@@ -2183,28 +2507,56 @@ app.get("/api/admin/orders/stats", authenticateToken, requireAdmin, async (req, 
 
 app.put("/api/admin/orders/:id/cancel", authenticateToken, requireAdmin, async (req, res) => {
   try {
+    // 1. Update the order status
     const result = await pool.query(
       `
       UPDATE orders
-      SET status='cancelled'
-      WHERE order_id=$1
+      SET status = 'cancelled'
+      WHERE order_id = $1
       RETURNING *
       `,
       [req.params.id]
     );
 
+    // 2. Check if order exists
     if (result.rows.length === 0) {
       return res.status(404).json({
         error: "Order not found",
       });
     }
 
-    res.json(result.rows[0]);
+    const order = result.rows[0];
+
+    // 3. Log the cancellation activity
+    await pool.query(
+      `
+      INSERT INTO activity_logs (
+        activity_type,
+        title,
+        description,
+        entity_id,
+        entity_type,
+        created_by
+      )
+      VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        "order",
+        "Order Cancelled",
+        `Order #${order.order_id} cancelled.`,
+        order.order_id,
+        "order",
+        req.user?.id || null,
+      ]
+    );
+
+    // 4. Return updated order
+    return res.json(order);
 
   } catch (err) {
     console.error(err);
 
-    res.status(500).json({
+    return res.status(500).json({
       error: "Cancel failed",
     });
   }
@@ -2401,10 +2753,10 @@ app.delete(
   }
 );
 
-// ==========================================
-// INVENTORY APIs
-// ==========================================
 
+// ==========================================
+// 1. GET ALL INVENTORY
+// ==========================================
 app.get(
   "/api/admin/inventory",
   authenticateToken,
@@ -2477,10 +2829,8 @@ app.get(
       `);
 
       res.json(result.rows);
-
     } catch (err) {
       console.error("Inventory fetch error:", err);
-
       res.status(500).json({
         error: "Failed to fetch inventory",
       });
@@ -2488,19 +2838,20 @@ app.get(
   }
 );
 
+// ==========================================
+// 2. UPDATE INVENTORY (WITH SAFE ROLLBACK & READABLE LOGS)
+// ==========================================
 app.put(
   "/api/admin/inventory/:productId",
   authenticateToken,
   requireAdmin,
   async (req, res) => {
+    let client;
+
     try {
+      client = await pool.connect();
       const { productId } = req.params;
-      const {
-        action,
-        quantity,
-        reason,
-        supplierNote,
-      } = req.body;
+      const { action, quantity, reason, supplierNote } = req.body;
 
       if (!quantity || quantity <= 0) {
         return res.status(400).json({
@@ -2508,48 +2859,62 @@ app.put(
         });
       }
 
-      // Current Stock
-      const current = await pool.query(
+      await client.query("BEGIN");
+
+      // Current stock & title fetch + Row Locking (FOR UPDATE)
+      const current = await client.query(
         `
-        SELECT quantity
-        FROM products
-        WHERE id = $1
-      `,
+        SELECT quantity, title
+        FROM product_catalogue
+        WHERE product_id = $1
+        FOR UPDATE
+        `,
         [productId]
       );
 
       if (current.rows.length === 0) {
+        await client.query("ROLLBACK");
         return res.status(404).json({
           error: "Product not found",
         });
       }
 
-      let stock = Number(current.rows[0].quantity);
+      const product = current.rows[0];
+      let stock = Number(product.quantity);
+      const parsedQuantity = Number(quantity);
 
       if (action === "add") {
-        stock += Number(quantity);
+        stock += parsedQuantity;
       } else if (action === "remove") {
-        if (stock < quantity) {
+        if (stock < parsedQuantity) {
+          await client.query("ROLLBACK");
           return res.status(400).json({
             error: "Insufficient stock",
           });
         }
-
-        stock -= Number(quantity);
+        stock -= parsedQuantity;
+      } else {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: "Invalid action. Use 'add' or 'remove'.",
+        });
       }
 
-      const updated = await pool.query(
+      // 1. Stock update query
+      const updated = await client.query(
         `
-        UPDATE products
+        UPDATE product_catalogue
         SET quantity = $1
-        WHERE id = $2
+        WHERE product_id = $2
         RETURNING *
         `,
         [stock, productId]
       );
 
-      // Save inventory history
-      await pool.query(
+      const updatedProduct = updated.rows[0];
+
+      // 2. Save into inventory_logs
+      await client.query(
         `
         INSERT INTO inventory_logs
         (
@@ -2566,7 +2931,7 @@ app.put(
         `,
         [
           productId,
-          Number(current.rows[0].quantity),
+          Number(product.quantity),
           stock,
           action === "add" ? "Stock Added" : "Stock Removed",
           reason || null,
@@ -2575,22 +2940,61 @@ app.put(
         ]
       );
 
-      res.json(updated.rows[0]);
-    } catch (err) {
-      console.error("Inventory update error:", err);
+      // 3. Save into activity_logs (Natural Human-readable Description)
+      await client.query(
+        `
+        INSERT INTO activity_logs
+        (
+          activity_type,
+          title,
+          description,
+          entity_id,
+          entity_type,
+          created_by,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+        `,
+        [
+          "inventory",
+          action === "add" ? "Stock Added" : "Stock Removed",
+          `${parsedQuantity} unit(s) ${
+            action === "add" ? "added to" : "removed from"
+          } ${updatedProduct.title || "Product"}.`,
+          productId,
+          "product",
+          req.user?.id || null,
+        ]
+      );
 
+      await client.query("COMMIT");
+      res.json(updatedProduct);
+
+    } catch (err) {
+      // Safe Rollback Guard (bina fail huye disconnect handle karne ke liye)
+      if (client) {
+        try {
+          await client.query("ROLLBACK");
+        } catch (_) {
+          // Connection loss pe rollback error ignore
+        }
+      }
+
+      console.error("Inventory update error:", err);
       res.status(500).json({
         error: "Failed to update inventory",
       });
+    } finally {
+      if (client) {
+        client.release();
+      }
     }
   }
 );
 
-
 // ==========================================
-// INVENTORY HISTORY API
+// 3. GET PRODUCT INVENTORY HISTORY
 // ==========================================
-
 app.get(
   "/api/admin/inventory/:productId/history",
   authenticateToken,
@@ -2620,10 +3024,8 @@ app.get(
       );
 
       res.json(result.rows);
-
     } catch (err) {
       console.error("Inventory history error:", err);
-
       res.status(500).json({
         error: "Failed to fetch inventory history",
       });

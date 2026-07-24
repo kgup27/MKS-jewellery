@@ -1,46 +1,29 @@
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Link } from "react-router-dom"; // <-- Integrated Step 1
+import { Link } from "react-router-dom";
+import categoryService from "../../../services/categoryService";
 
 function Categories() {
-  // Updated Category data with slugs (Step 2)
-  const categories = [
-    {
-      id: 1,
-      title: "Rings",
-      slug: "rings",
-      image: "https://placehold.co/300x300",
-    },
-    {
-      id: 2,
-      title: "Earrings",
-      slug: "earrings",
-      image: "https://placehold.co/300x300",
-    },
-    {
-      id: 3,
-      title: "Necklace",
-      slug: "necklace",
-      image: "https://placehold.co/300x300",
-    },
-    {
-      id: 4,
-      title: "Bangles",
-      slug: "bangles",
-      image: "https://placehold.co/300x300",
-    },
+  // Step 2: Static array delete karke dynamic state assign kar di hai
+  const [categories, setCategories] = useState([]);
 
-    {
-      id: 5,
-      title: "Studs",
-      slug: "studs",
-      image: "https://placehold.co/300x300",
-    },
-  ];
+  // Step 3: API Call useEffect ke through
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await categoryService.getAllCategories();
+        setCategories(data);
+      } catch (err) {
+        console.error("Failed to load categories:", err);
+      }
+    };
+
+    loadCategories();
+  }, []);
 
   return (
-    <section className="bg-white py-20">
-      <div className="mx-auto max-w-7xl px-6">
-        
+    <section className="bg-white py-14 sm:py-16 lg:py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Heading */}
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -49,7 +32,7 @@ function Categories() {
           viewport={{ once: true }}
           className="text-center"
         >
-          <h2 className="mb-3 text-4xl font-bold">
+          <h2 className="mb-3 text-3xl sm:text-4xl font-bold">
             Shop by Category
           </h2>
           <p className="mb-12 text-gray-500">
@@ -58,13 +41,12 @@ function Categories() {
         </motion.div>
 
         {/* Categories Grid */}
-        <div className="grid grid-cols-2 gap-8 md:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
           {categories.map((item, index) => (
-            
-            // Wrapped motion.div inside Link for seamless navigation (Step 3)
+            // Step 6: Query parameter me slug ki jagah item.name use kiya hai
             <Link 
-              key={item.id} 
-              to={`/shop?category=${item.slug}`}
+              key={item.category_id}
+              to={`/shop?category=${item.name}`}
               className="block"
             >
               <motion.div
@@ -87,20 +69,22 @@ function Categories() {
                 className="group cursor-pointer overflow-hidden rounded-3xl bg-white shadow transition-all duration-500 hover:shadow-2xl"
               >
                 <div className="relative overflow-hidden">
+                  {/* Step 5: item.image ki jagah item.image_url update ho gaya hai */}
                   <img
                     loading="lazy"
                     decoding="async"
-                    src={item.image}
-                    alt={item.title}
-                    className="h-72 w-full object-cover transition-all duration-700 group-hover:scale-110"
+                    src={item.image_url}
+                    alt={item.name}
+                    className="aspect-square w-full object-cover transition-all duration-700 group-hover:scale-110"
                   />
                   {/* Overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition duration-500 group-hover:opacity-100"></div>
                 </div>
 
                 <div className="p-5">
+                  {/* Step 4: item.title ki jagah item.name render ho raha hai */}
                   <h3 className="text-xl font-semibold transition group-hover:text-[#C9A227]">
-                    {item.title}
+                    {item.name}
                   </h3>
                   <button className="mt-4 font-medium text-[#C9A227] transition-all duration-300 group-hover:translate-x-2">
                     Explore →
@@ -108,7 +92,6 @@ function Categories() {
                 </div>
               </motion.div>
             </Link>
-
           ))}
         </div>
       </div>

@@ -5,22 +5,18 @@ import Navbar from "../components/Navbar/Navbar";
 function MainLayout({ children }) {
   return (
     <>
+      {/* Top Announcement Bar */}
       <AnnouncementBar />
+
+      {/* Navigation */}
       <Navbar />
 
+      {/* Main Page Content */}
       <motion.main
-        initial={{
-          opacity: 0,
-          y: 20,
-        }}
-        animate={{
-          opacity: 1,
-          y: 0,
-        }}
-        exit={{
-          opacity: 0,
-          y: -20,
-        }}
+        className="min-h-screen"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -20 }}
         transition={{
           duration: 0.4,
           ease: "easeOut",

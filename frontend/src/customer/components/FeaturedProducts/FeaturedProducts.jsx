@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import api from "../../../services/api";
 
+// 🔴 1. Updated Import: Using central productService instead of direct api call
+import productService from "../../../services/productService";
 import ProductCard from "../ProductCard/ProductCard";
 
 function FeaturedProducts() {
@@ -13,10 +14,11 @@ function FeaturedProducts() {
     try {
       setLoading(true);
 
-      const response = await api.get("/api/products");
-
-      // Sirf first 8 products dikhayenge
-      setProducts(response.data.slice(0, 8));
+      // 🔴 1. API Call: Simplified using productService
+      const data = await productService.getAllProducts();
+      
+      // 🔴 8. Slice first 8 products (or backend filtered featured items)
+      setProducts(data.slice(0, 8));
     } catch (error) {
       console.error(error);
       toast.error("Failed to load products");
@@ -29,12 +31,31 @@ function FeaturedProducts() {
     fetchProducts();
   }, []);
 
+  // 🔴 2, 4, 5. Modern Skeleton Loading state with responsive grid & padding
   if (loading) {
     return (
-      <section className="bg-[#F8F6F2] py-20">
-        <div className="mx-auto max-w-7xl px-6 text-center">
-          <h2 className="text-2xl font-semibold">
-            Loading Products...
+      <section className="bg-[#F8F6F2] py-14 sm:py-16 lg:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4">
+            {[...Array(8)].map((_, index) => (
+              <div
+                key={index}
+                className="h-[420px] animate-pulse rounded-2xl bg-gray-200"
+              />
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // 🔴 7. Empty State handling
+  if (products.length === 0) {
+    return (
+      <section className="bg-[#F8F6F2] py-14 sm:py-16 lg:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-2xl font-semibold text-gray-700">
+            No Products Found
           </h2>
         </div>
       </section>
@@ -42,8 +63,10 @@ function FeaturedProducts() {
   }
 
   return (
-    <section className="bg-[#F8F6F2] py-20">
-      <div className="mx-auto max-w-7xl px-6">
+    // 🔴 4. Responsive Section Padding
+    <section className="bg-[#F8F6F2] py-14 sm:py-16 lg:py-20">
+      {/* 🔴 5. Responsive Container Padding */}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
 
         {/* Heading */}
         <motion.div
@@ -53,7 +76,8 @@ function FeaturedProducts() {
           viewport={{ once: true }}
           className="text-center"
         >
-          <h2 className="text-4xl font-bold">
+          {/* 🔴 6. Responsive Heading Size */}
+          <h2 className="text-3xl sm:text-4xl font-bold">
             Featured Collection
           </h2>
 
@@ -62,7 +86,7 @@ function FeaturedProducts() {
           </p>
         </motion.div>
 
-        {/* Products */}
+        {/* 🔴 3. Responsive Grid Layout (Mobile: 2, Tablet: 3, Desktop: 4) */}
         <motion.div
           initial="hidden"
           whileInView="show"
@@ -74,11 +98,11 @@ function FeaturedProducts() {
             hidden: {},
             show: {},
           }}
-          className="grid gap-8 md:grid-cols-2 lg:grid-cols-4"
+          className="grid grid-cols-2 gap-6 md:grid-cols-3 xl:grid-cols-4"
         >
           {products.map((product) => (
             <motion.div
-              key={product.id}
+              key={product.id || product._id}
               variants={{
                 hidden: {
                   opacity: 0,

@@ -5,7 +5,7 @@ const categoryService = {
   // Get All Categories
   // ==========================
   getAllCategories: async (params = {}) => {
-    const response = await axiosInstance.get("/categories", {
+    const response = await axiosInstance.get("/api/categories", {
       params,
     });
 
